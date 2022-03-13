@@ -1,17 +1,14 @@
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
-use std::borrow::{Borrow, BorrowMut};
-use std::cell::RefCell;
+use std::borrow::Borrow;
 use std::cell::UnsafeCell;
-use std::future::Pending;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::atomic::Ordering::SeqCst;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use uuid::Uuid;
 
 #[derive(Clone)]
 struct SystemInfo {
@@ -23,18 +20,6 @@ struct SystemInfo {
 thread_local! {
     static SYSTEM: Mutex<Option<SystemInfo>> = Mutex::new(None);
 }
-
-/*
-pub enum OperationBody<T: Copy> {
-    Get,
-    Set(T),
-}
-
-pub struct Operation<T: Copy> {
-    body: OperationBody<T>,
-    id: Uuid,
-    target: Rc<UnsafeCell<T>>,
-}*/
 
 #[derive(Debug)]
 pub enum OperationType {
@@ -71,16 +56,12 @@ pub struct PendingResult<T: Copy> {
 #[derive(Clone)]
 pub struct Atomic<T: Copy> {
     value: Arc<Mutex<T>>,
-    id: Uuid,
 }
 
 impl<T: Copy> Deref for PendingResult<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        //let v = SYSTEM.with(|v| v.borrow().is_some());
-        //println!("Got {}", v);
-
         let mut taken = false;
 
         while !self.executed.load(Ordering::Relaxed) {
@@ -96,7 +77,6 @@ impl<T: Copy> Deref for PendingResult<T> {
                 });
                 taken = true;
             }
-            //            println!("Waiting on op");
         }
 
         if taken {
@@ -111,8 +91,6 @@ impl<T: Copy> Deref for PendingResult<T> {
             });
         }
 
-        //println!("Got op");
-
         let v = self.value_slot.lock().unwrap();
 
         unsafe {
@@ -126,19 +104,16 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
     pub fn new(value: T) -> Self {
         Self {
             value: Arc::new(Mutex::new(value)),
-            id: Uuid::new_v4(),
         }
     }
 
     pub fn fence() {
         let op = {
-            //    let executed = executed.clone();
             Operation {
                 op: OperationType::Fence,
                 thread: SYSTEM.with(|v| v.lock().unwrap().as_ref().unwrap().thread),
                 execute: Box::new(move || {
                     println!("Fence!");
-                    //          executed.store(true, Ordering::Relaxed);
                 }),
             }
         };
@@ -146,9 +121,8 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
         SYSTEM.with(|v| {
             let sys = v.borrow().lock().unwrap();
 
-            if let Some(mut s) = sys.as_ref() {
-                s.chan.send(op);
-                //s.operations.lock().unwrap().push(op);
+            if let Some(s) = sys.as_ref() {
+                s.chan.send(op).unwrap();
             }
         });
     }
@@ -156,10 +130,9 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
     pub fn get(&mut self) -> PendingResult<T> {
         //self.value;
 
-        let mut value = Rc::new(UnsafeCell::new(T::default()));
+        let value = Rc::new(UnsafeCell::new(T::default()));
 
-        let mut valc = value.clone();
-        let mut vclone = self.value.clone();
+        let vclone = self.value.clone();
         let executed = Arc::new(AtomicBool::new(false));
         let value_slot = Arc::new(Mutex::new(None));
 
@@ -182,8 +155,8 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
         SYSTEM.with(|v| {
             let sys = v.borrow().lock().unwrap();
 
-            if let Some(mut s) = sys.as_ref() {
-                s.chan.send(op);
+            if let Some(s) = sys.as_ref() {
+                s.chan.send(op).unwrap();
                 //s.operations.lock().unwrap().push(op);
             }
         });
@@ -200,7 +173,6 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
         let value = Rc::new(UnsafeCell::new(val));
 
         let vclone = self.value.clone();
-        let valc = value.clone();
         let executed = Arc::new(AtomicBool::new(false));
         let value_slot = Arc::new(Mutex::new(None));
 
@@ -224,8 +196,8 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
         SYSTEM.with(|v| {
             let sys = v.borrow().lock().unwrap();
 
-            if let Some(mut s) = sys.as_ref() {
-                s.chan.send(operation);
+            if let Some(s) = sys.as_ref() {
+                s.chan.send(operation).unwrap();
             }
         });
 
@@ -238,20 +210,15 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
 }
 
 #[derive(Clone)]
-pub struct System {
-    // How ?
-    pub operations: Arc<Mutex<Vec<Operation>>>,
-}
+pub struct System {}
 
 impl System {
     pub fn new() -> Self {
-        Self {
-            operations: Arc::new(Mutex::new(vec![])),
-        }
+        Self {}
     }
 
     pub fn get_op(ops: &mut Vec<Operation>, ind: usize) -> Option<Operation> {
-        if ops.len() == 0 {
+        if ops.is_empty() {
             return None;
         }
 
@@ -259,18 +226,8 @@ impl System {
 
         for x in 0..ind {
             if ops[x].blocks(&ops[ind]) {
-                /*
-                println!(
-                    "Blocks! {} {} {:?} {:?} {} {}",
-                    x, ind, ops[x].op, ops[ind].op, ops[x].thread, ops[ind].thread
-                );*/
                 return None;
             }
-            /*
-            println!(
-                "Checking block {} {:?} {:?} {} {}",
-                x, ops[x].op, ops[ind].op, ops[x].thread, ops[ind].thread
-            );*/
         }
 
         Some(ops.remove(ind))
@@ -282,7 +239,7 @@ impl System {
 
         //println!("Executing with Seed {}", s);
         let mut handles = vec![];
-        let mut finished = Arc::new(Mutex::new(0));
+        let finished = Arc::new(AtomicUsize::new(0));
 
         let (sender, receiver) = channel();
 
@@ -292,36 +249,40 @@ impl System {
             parked: Arc::new(AtomicUsize::new(0)),
         };
 
+        //let start = std::time::UNIX_EPOCH.elapsed().unwrap().as_micros() as u64;
         for mut f in fns.drain(..) {
-            let system = self.clone();
-
-            let mut finished = finished.clone();
+            let finished = finished.clone();
 
             sys_info.thread += 1;
-            let mut sys_info = sys_info.clone();
+            let sys_info = sys_info.clone();
 
             handles.push(thread::spawn(move || {
                 SYSTEM.with(|v| *v.lock().unwrap() = Some(sys_info));
                 f();
-                *finished.lock().unwrap() += 1;
+                finished.fetch_add(1, SeqCst);
             }));
         }
 
-        while *finished.lock().unwrap() < handles.len() {
+        //let end = std::time::UNIX_EPOCH.elapsed().unwrap().as_micros() as u64;
+        //        println!("Launch took {}", end - start);
+
+        let mut operations = vec![];
+
+        while finished.load(SeqCst) < handles.len() {
             while let Ok(v) = receiver.try_recv() {
-                self.operations.lock().unwrap().push(v);
+                operations.push(v);
+                //self.operations.lock().unwrap().push(v);
             }
 
-            let finished_count = *finished.lock().unwrap();
+            let finished_count = finished.load(SeqCst);
             let parked_count = sys_info.parked.load(SeqCst);
 
             if finished_count + parked_count == handles.len() {
                 //println!("Ready to progress {} {}", finished_count, parked_count);
 
-                let mut ops = self.operations.lock().unwrap();
+                //let mut ops = self.operations.lock().unwrap();
 
-                if let Some(o) = Self::get_op(&mut ops, rng.next_u64() as usize) {
-                    drop(ops);
+                if let Some(o) = Self::get_op(&mut operations, rng.next_u64() as usize) {
                     o.execute.as_ref()();
                 }
             }
