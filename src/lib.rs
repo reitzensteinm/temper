@@ -7,19 +7,6 @@ extern crate uuid;
 use threadpool::ThreadPool;
 pub mod temper;
 
-/* From Intel's memory model documentation
-
-Thread 1:
-a = 1
-print(b)
-
-Thread 2:
-b = 1
-print(a)
-
-Can print any of (0,0) (0,1) (1,0) (1,1)
-*/
-
 #[derive(Clone)]
 struct Test {
     a: Atomic<u32>,
