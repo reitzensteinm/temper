@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use uuid::Uuid;
 
 #[derive(Clone)]
 struct SystemInfo {
@@ -31,6 +32,7 @@ pub enum OperationType {
 pub struct Operation {
     pub op: OperationType,
     thread: usize,
+    location: Uuid,
     pub execute: Box<dyn Fn() + Send>,
 }
 
@@ -38,6 +40,10 @@ impl Operation {
     pub fn blocks(&self, other: &Operation) -> bool {
         if self.thread != other.thread {
             return false;
+        }
+
+        if other.location == self.location {
+            return true;
         }
 
         #[allow(clippy::match_like_matches_macro)]
@@ -57,6 +63,28 @@ pub struct PendingResult<T: Copy> {
 #[derive(Clone)]
 pub struct Atomic<T: Copy> {
     value: Arc<Mutex<T>>,
+    id: Uuid,
+}
+
+#[derive(Clone)]
+pub struct SharedMemory<T: Copy> {
+    arr: Vec<Atomic<T>>,
+}
+
+impl<T: Copy + Default + 'static + Send> SharedMemory<T> {
+    pub fn new(len: usize) -> Self {
+        SharedMemory {
+            arr: (0..len).map(|_| Atomic::new(T::default())).collect(),
+        }
+    }
+
+    pub fn get(&self, ind: usize) -> PendingResult<T> {
+        self.arr[ind].get()
+    }
+
+    pub fn set(&mut self, ind: usize, val: T) -> PendingResult<T> {
+        self.arr[ind].set(val)
+    }
 }
 
 impl<T: Copy> Deref for PendingResult<T> {
@@ -94,14 +122,16 @@ impl<T: Copy> Deref for PendingResult<T> {
 impl<T: Copy + Default + 'static + Send> Atomic<T> {
     pub fn new(value: T) -> Self {
         Self {
+            id: Uuid::new_v4(),
             value: Arc::new(Mutex::new(value)),
         }
     }
 
-    pub fn queue_op<F: Fn() + Send + 'static>(op_type: OperationType, op: F) {
+    pub fn queue_op<F: Fn() + Send + 'static>(id: Uuid, op_type: OperationType, op: F) {
         let op = {
             Operation {
                 op: op_type,
+                location: id,
                 thread: SYSTEM.with(|v| v.lock().unwrap().as_ref().unwrap().thread),
                 execute: Box::new(op),
             }
@@ -117,10 +147,10 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
     }
 
     pub fn fence() {
-        Self::queue_op(OperationType::Fence, move || {});
+        Self::queue_op(Uuid::new_v4(), OperationType::Fence, move || {});
     }
 
-    pub fn get(&mut self) -> PendingResult<T> {
+    pub fn get(&self) -> PendingResult<T> {
         let value = Rc::new(UnsafeCell::new(T::default()));
 
         let vclone = self.value.clone();
@@ -130,7 +160,7 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
         {
             let executed = executed.clone();
             let value_slot = value_slot.clone();
-            Self::queue_op(OperationType::Get, move || {
+            Self::queue_op(self.id, OperationType::Get, move || {
                 let v = *vclone.lock().unwrap();
 
                 *value_slot.lock().unwrap() = Some(v);
@@ -157,7 +187,7 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
             let executed = executed.clone();
             let value_slot = value_slot.clone();
 
-            Self::queue_op(OperationType::Set, move || {
+            Self::queue_op(self.id, OperationType::Set, move || {
                 *vclone.lock().unwrap() = val;
 
                 *value_slot.lock().unwrap() = Some(val);
