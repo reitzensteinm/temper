@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
-use tempers::temper::memory::core::{Atomic, System};
+use temper::temper::memory::core::{Atomic, System};
 
 /* Default test environment provides for four variables */
 
