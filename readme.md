@@ -22,5 +22,6 @@ Todo
 18) Netsplits
 19) False sharing analysis?
 20) Test determinism
-21) Fuzz errors
+21) Fuzz corruption
 22) Look in to Loom
+23) Test for determinism at a given seed
