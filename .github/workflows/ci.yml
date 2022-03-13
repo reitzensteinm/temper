@@ -11,7 +11,7 @@ on:
 
 jobs:
   build_and_test:
-    name: Tempers
+    name: Temper
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2

@@ -1,4 +1,4 @@
-use tempers::run_bench;
+use temper::run_bench;
 
 fn main() {
     run_bench();
