@@ -1,65 +1,7 @@
-use std::collections::HashSet;
-use std::hash::Hash;
-use std::sync::{Arc, Mutex};
+mod common;
+
+use common::utils::{run_until, Test};
 use temper::temper::memory::core::{Atomic, System};
-
-/* Default test environment provides for four variables */
-
-#[derive(Clone)]
-#[allow(unused)]
-struct Test {
-    a: Atomic<usize>,
-    b: Atomic<usize>,
-    c: Atomic<usize>,
-    d: Atomic<usize>,
-
-    results: Arc<Mutex<Vec<usize>>>,
-}
-
-impl Default for Test {
-    fn default() -> Self {
-        Test {
-            a: Atomic::new(0usize),
-            b: Atomic::new(0usize),
-            c: Atomic::new(0usize),
-            d: Atomic::new(0usize),
-            results: Arc::new(Mutex::new(vec![])),
-        }
-    }
-}
-
-impl Test {
-    pub fn report_result(&mut self, index: usize, result: usize) {
-        let mut res = self.results.lock().unwrap();
-        while res.len() <= index {
-            res.push(0);
-        }
-        res[index] = result;
-    }
-}
-
-fn check_set<T: Clone + Eq + Hash>(hs: &HashSet<T>, arr: &Vec<T>) -> bool {
-    let mut ns = HashSet::new();
-    for x in arr {
-        ns.insert(x.clone());
-    }
-    ns == *hs
-}
-
-fn run_until<T: Clone + Eq + Hash, F: FnMut() -> T>(mut f: F, expected: Vec<T>) -> bool {
-    let mut res = HashSet::new();
-
-    for _x in 0..10_000 {
-        res.insert(f());
-
-        if check_set(&res, &expected) {
-            //println!("Took {}", x);
-            return true;
-        }
-    }
-
-    false
-}
 
 /* From Intel's memory model documentation
 
