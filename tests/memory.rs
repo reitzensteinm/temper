@@ -72,6 +72,7 @@ b = 1
 print(a)
 
 Can print any of (0,0) (0,1) (1,0) (1,1)
+If a memfence is present, (0,0) is not a valid result
 */
 
 fn test_a(memfence: bool) -> Vec<usize> {
