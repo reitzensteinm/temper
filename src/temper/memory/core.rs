@@ -40,6 +40,7 @@ impl Operation {
             return false;
         }
 
+        #[allow(clippy::match_like_matches_macro)]
         match (&self.op, &other.op) {
             (OperationType::Set, OperationType::Get) => false,
             _ => true,
@@ -209,7 +210,7 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct System {}
 
 impl System {

@@ -36,7 +36,7 @@ fn run_test() {
     };
 
     let mut ta = t.clone();
-    let mut tb = t.clone();
+    let mut tb = t;
 
     let fns: Vec<Box<dyn FnMut() + Send>> = vec![
         Box::new(move || test_left(&mut ta)),
