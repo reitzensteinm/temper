@@ -74,7 +74,7 @@ print(a)
 Can print any of (0,0) (0,1) (1,0) (1,1)
 */
 
-fn test_a() -> Vec<usize> {
+fn test_a(memfence: bool) -> Vec<usize> {
     let s = System::new();
 
     let test = Test::default();
@@ -83,6 +83,9 @@ fn test_a() -> Vec<usize> {
         let mut test = test.clone();
         move || {
             test.b.set(1);
+            if memfence {
+                Atomic::<()>::fence()
+            }
             let res = *test.a.get();
             test.report_result(0, res);
         }
@@ -92,6 +95,9 @@ fn test_a() -> Vec<usize> {
         let mut test = test.clone();
         move || {
             test.a.set(1);
+            if memfence {
+                Atomic::<()>::fence()
+            }
             let res = *test.b.get();
             test.report_result(1, res);
         }
@@ -107,5 +113,13 @@ fn test_a() -> Vec<usize> {
 
 #[test]
 fn test_a_runner() {
-    run_until(test_a, vec![vec![0, 0], vec![0, 1], vec![1, 0], vec![1, 1]]);
+    assert!(run_until(
+        || test_a(false),
+        vec![vec![0, 0], vec![0, 1], vec![1, 0], vec![1, 1]],
+    ));
+
+    assert!(run_until(
+        || test_a(true),
+        vec![vec![0, 1], vec![1, 0], vec![1, 1]],
+    ));
 }
