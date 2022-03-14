@@ -14,10 +14,31 @@ Todo
 10) Visualization exporting
 11) Memory that's not coherent
 12) Locks
-13) mmap?
 14) Netsplits
 15) False sharing analysis?
-16) Test determinism
-17) Fuzz corruption
-18) Look in to Loom
-19) Test for determinism at a given seed
+16) Test determinism and fix seeds
+17) Fuzz corrupted messages/disk
+
+**Queue Sprint**
+* Build industrial queue
+* Mechanism for crate swapping
+* Deterministic testing with seeds and reproducibility
+* Acquire/Release semantics + Fences
+
+**Disk Sprint**
+* System sharing
+* TCP
+* Disk w/ fsync
+* Get/Set with LSM server and client
+
+**Low Level Sprint**
+* Locks
+* CAS
+* Non-coherent memory models
+* Spin forever under contention
+
+**Distributed Systems & CRDT Sprint**
+* Model simple CRDT
+* Turning off network connections?
+* Implement Raft
+* Netsplit
