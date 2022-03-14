@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
-use temper::temper::memory::core::Atomic;
+use temper::temper::memory::core::{Atomic, SharedMemory};
 
 /* Default test environment provides for four variables */
 
@@ -13,6 +13,8 @@ pub struct Test {
     pub c: Atomic<usize>,
     pub d: Atomic<usize>,
 
+    pub arr: SharedMemory<usize>,
+
     pub results: Arc<Mutex<Vec<usize>>>,
 }
 
@@ -23,6 +25,7 @@ impl Default for Test {
             b: Atomic::new(0usize),
             c: Atomic::new(0usize),
             d: Atomic::new(0usize),
+            arr: SharedMemory::new(1024),
             results: Arc::new(Mutex::new(vec![])),
         }
     }

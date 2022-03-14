@@ -5,9 +5,9 @@ env:
 
 on:
   push:
-    branches: [ main ]
+    branches: [ '*' ]
   pull_request:
-    branches: [ main ]
+    branches: [ '*' ]
 
 jobs:
   build_and_test:
@@ -36,4 +36,4 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: -- -D warnings
+          args: --tests -- -D warnings

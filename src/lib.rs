@@ -1,3 +1,6 @@
+//#![warn(clippy::panic, clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::ptr_arg)]
+
 use crate::temper::memory::core::{Atomic, System};
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::Relaxed;
