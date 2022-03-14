@@ -48,10 +48,8 @@ impl Operation {
             return true;
         }
 
-        if model == MemoryModel::ARM {
-            if standard_op(self.op) && standard_op(other.op) {
-                return false;
-            }
+        if model == MemoryModel::ARM && standard_op(self.op) && standard_op(other.op) {
+            return false;
         }
 
         #[allow(clippy::match_like_matches_macro)]
