@@ -8,12 +8,12 @@ use temper::temper::memory::core::{Atomic, SharedMemory};
 #[derive(Clone)]
 #[allow(unused)]
 pub struct Test {
-    pub a: Atomic<usize>,
-    pub b: Atomic<usize>,
-    pub c: Atomic<usize>,
-    pub d: Atomic<usize>,
+    pub a: Arc<Atomic<usize>>,
+    pub b: Arc<Atomic<usize>>,
+    pub c: Arc<Atomic<usize>>,
+    pub d: Arc<Atomic<usize>>,
 
-    pub arr: SharedMemory<usize>,
+    pub arr: Arc<SharedMemory<usize>>,
 
     pub results: Arc<Mutex<Vec<usize>>>,
 }
@@ -21,18 +21,18 @@ pub struct Test {
 impl Default for Test {
     fn default() -> Self {
         Test {
-            a: Atomic::new(0usize),
-            b: Atomic::new(0usize),
-            c: Atomic::new(0usize),
-            d: Atomic::new(0usize),
-            arr: SharedMemory::new(1024),
+            a: Arc::new(Atomic::new(0usize)),
+            b: Arc::new(Atomic::new(0usize)),
+            c: Arc::new(Atomic::new(0usize)),
+            d: Arc::new(Atomic::new(0usize)),
+            arr: Arc::new(SharedMemory::new(1024)),
             results: Arc::new(Mutex::new(vec![])),
         }
     }
 }
 
 impl Test {
-    pub fn report_result(&mut self, index: usize, result: usize) {
+    pub fn report_result(&self, index: usize, result: usize) {
         let mut res = self.results.lock().unwrap();
         while res.len() <= index {
             res.push(0);

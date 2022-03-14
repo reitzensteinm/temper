@@ -26,7 +26,7 @@ fn test_a(memfence: bool) -> Vec<usize> {
     let test = Test::default();
 
     let fa = {
-        let mut test = test.clone();
+        let test = test.clone();
         move || {
             test.b.set(1);
             if memfence {
@@ -38,7 +38,7 @@ fn test_a(memfence: bool) -> Vec<usize> {
     };
 
     let fb = {
-        let mut test = test.clone();
+        let test = test.clone();
         move || {
             test.a.set(1);
             if memfence {
@@ -76,7 +76,7 @@ fn test_queue(iters: usize) -> Vec<usize> {
     let test = Test::default();
 
     let fa = {
-        let mut test = test.clone();
+        let test = test.clone();
         move || {
             for x in 0..iters {
                 let i = *test.a.get();
@@ -87,7 +87,7 @@ fn test_queue(iters: usize) -> Vec<usize> {
     };
 
     let fb = {
-        let mut test = test.clone();
+        let test = test.clone();
         move || {
             let mut o = 0;
             for _ in 0..iters {

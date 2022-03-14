@@ -60,13 +60,11 @@ pub struct PendingResult<T: Copy> {
     executed: Arc<AtomicBool>,
 }
 
-#[derive(Clone)]
 pub struct Atomic<T: Copy> {
     value: Arc<Mutex<T>>,
     id: Uuid,
 }
 
-#[derive(Clone)]
 pub struct SharedMemory<T: Copy> {
     arr: Vec<Atomic<T>>,
 }
@@ -82,7 +80,7 @@ impl<T: Copy + Default + 'static + Send> SharedMemory<T> {
         self.arr[ind].get()
     }
 
-    pub fn set(&mut self, ind: usize, val: T) -> PendingResult<T> {
+    pub fn set(&self, ind: usize, val: T) -> PendingResult<T> {
         self.arr[ind].set(val)
     }
 }
@@ -176,7 +174,7 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
         }
     }
 
-    pub fn set(&mut self, val: T) -> PendingResult<T> {
+    pub fn set(&self, val: T) -> PendingResult<T> {
         let value = Rc::new(UnsafeCell::new(val));
 
         let vclone = self.value.clone();
