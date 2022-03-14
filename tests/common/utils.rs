@@ -25,7 +25,7 @@ impl Default for Test {
             b: Atomic::new(0usize),
             c: Atomic::new(0usize),
             d: Atomic::new(0usize),
-            arr: SharedMemory::new(256),
+            arr: SharedMemory::new(1024),
             results: Arc::new(Mutex::new(vec![])),
         }
     }
