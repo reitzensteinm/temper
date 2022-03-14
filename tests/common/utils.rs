@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 use temper::temper::memory::core::{Atomic, SharedMemory};
@@ -49,17 +50,25 @@ fn check_set<T: Clone + Eq + Hash>(hs: &HashSet<T>, arr: &Vec<T>) -> bool {
     ns == *hs
 }
 
-pub fn run_until<T: Clone + Eq + Hash, F: FnMut() -> T>(mut f: F, expected: Vec<T>) -> bool {
+pub fn run_until<T: Clone + Eq + Hash + Debug, F: FnMut() -> T>(
+    mut f: F,
+    expected: Vec<T>,
+) -> bool {
     let mut res = HashSet::new();
 
-    for _x in 0..10_000 {
+    for x in 0..10_000 {
         res.insert(f());
 
-        if check_set(&res, &expected) {
-            //println!("Took {}", x);
+        if check_set(&res, &expected) && x > 100 {
             return true;
+        }
+
+        if res.len() > expected.len() {
+            println!("Failed {:?} {:?}", res, expected);
+            return false;
         }
     }
 
+    println!("Failed {:?} {:?}", res, expected);
     false
 }
