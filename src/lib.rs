@@ -1,7 +1,7 @@
 //#![warn(clippy::panic, clippy::unwrap_used, clippy::expect_used)]
 #![allow(clippy::ptr_arg)]
 
-use crate::temper::memory::core::{Atomic, System};
+use crate::temper::memory::core::{Atomic, MemoryModel, System};
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
@@ -12,8 +12,8 @@ pub mod temper;
 
 #[derive(Clone)]
 struct Test {
-    a: Atomic<u32>,
-    b: Atomic<u32>,
+    a: Arc<Atomic<u32>>,
+    b: Arc<Atomic<u32>>,
 }
 
 fn test_left(t: &mut Test) {
@@ -31,11 +31,11 @@ fn test_right(t: &mut Test) {
 }
 
 fn run_test() {
-    let s = System::new();
+    let s = System::new(MemoryModel::Intel);
 
     let t = Test {
-        a: Atomic::new(0),
-        b: Atomic::new(0),
+        a: Arc::new(Atomic::new(0)),
+        b: Arc::new(Atomic::new(0)),
     };
 
     let mut ta = t.clone();

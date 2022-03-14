@@ -2,26 +2,22 @@
 
 Todo
 
-1) ARM Memory model support
-2) Use lifetimes to ensure resolve() ordering
-3) ARM examples in testing
-4) Store/Release
-5) Fix shared memory
-6) Fences with Access Levels
-7) Lock Free Concurrent Queue
-8) How do we have multiple systems, e.g. Disk + Memory
-9) Drop in replacement API that doesn't test in release
-10) TCP
-11) Disk with fsync, fsync on directories
-12) LSM trees with merge
-13) CRDTs
-14) Visualization exporting
-15) Memory that's not coherent
-16) Locks
-17) mmap?
-18) Netsplits
-19) False sharing analysis?
-20) Test determinism
-21) Fuzz corruption
-22) Look in to Loom
-23) Test for determinism at a given seed
+1) Store/Release
+2) Fences with Access Levels
+3) Lock Free Concurrent Queue
+4) How do we have multiple systems, e.g. Disk + Memory
+5) Drop in replacement API that doesn't test in release
+6) TCP
+7) Disk with fsync, fsync on directories
+8) LSM trees with merge
+9) CRDTs
+10) Visualization exporting
+11) Memory that's not coherent
+12) Locks
+13) mmap?
+14) Netsplits
+15) False sharing analysis?
+16) Test determinism
+17) Fuzz corruption
+18) Look in to Loom
+19) Test for determinism at a given seed

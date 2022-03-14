@@ -4,7 +4,7 @@ mod common;
 
 use common::utils::{run_until, Test};
 
-use temper::temper::memory::core::{Atomic, System};
+use temper::temper::memory::core::{Atomic, MemoryModel, System};
 
 /* From Intel's memory model documentation
 
@@ -21,12 +21,12 @@ If a memfence is present, (0,0) is not a valid result
 */
 
 fn test_a(memfence: bool) -> Vec<usize> {
-    let s = System::new();
+    let s = System::new(MemoryModel::Intel);
 
     let test = Test::default();
 
     let fa = {
-        let mut test = test.clone();
+        let test = test.clone();
         move || {
             test.b.set(1);
             if memfence {
@@ -38,7 +38,7 @@ fn test_a(memfence: bool) -> Vec<usize> {
     };
 
     let fb = {
-        let mut test = test.clone();
+        let test = test.clone();
         move || {
             test.a.set(1);
             if memfence {
@@ -70,24 +70,30 @@ fn test_a_runner() {
     ));
 }
 
-fn test_queue(iters: usize) -> Vec<usize> {
+fn test_queue(iters: usize, model: MemoryModel) -> Vec<usize> {
     //let start = Utc::now();
-    let system = System::new();
+    let system = System::new(model);
     let test = Test::default();
 
     let fa = {
-        let mut test = test.clone();
+        let test = test.clone();
         move || {
             for x in 0..iters {
                 let i = *test.a.get();
                 test.arr.set(i, x);
+
+                // ARM requires fence here
+                if model == MemoryModel::ARM {
+                    Atomic::<()>::fence();
+                }
+
                 test.a.set(i + 1);
             }
         }
     };
 
     let fb = {
-        let mut test = test.clone();
+        let test = test.clone();
         move || {
             let mut o = 0;
             for _ in 0..iters {
@@ -120,7 +126,14 @@ fn test_queue(iters: usize) -> Vec<usize> {
 #[test]
 fn test_queue_runner() {
     let expected = (0..5).sum();
-    assert!(run_until(|| test_queue(5), vec![vec![expected]]));
+    assert!(run_until(
+        || test_queue(5, MemoryModel::ARM),
+        vec![vec![expected]]
+    ));
+    assert!(run_until(
+        || test_queue(5, MemoryModel::Intel),
+        vec![vec![expected]]
+    ));
 }
 
 /*use std::sync::atomic::AtomicUsize;

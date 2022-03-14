@@ -22,7 +22,7 @@ thread_local! {
     static SYSTEM: Mutex<Option<SystemInfo>> = Mutex::new(None);
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum OperationType {
     Get,
     Set,
@@ -37,13 +37,19 @@ pub struct Operation {
 }
 
 impl Operation {
-    pub fn blocks(&self, other: &Operation) -> bool {
+    pub fn blocks(&self, other: &Operation, model: MemoryModel) -> bool {
+        let standard_op = |a| a == OperationType::Set || a == OperationType::Get;
+
         if self.thread != other.thread {
             return false;
         }
 
         if other.location == self.location {
             return true;
+        }
+
+        if model == MemoryModel::ARM && standard_op(self.op) && standard_op(other.op) {
+            return false;
         }
 
         #[allow(clippy::match_like_matches_macro)]
@@ -60,13 +66,11 @@ pub struct PendingResult<T: Copy> {
     executed: Arc<AtomicBool>,
 }
 
-#[derive(Clone)]
 pub struct Atomic<T: Copy> {
     value: Arc<Mutex<T>>,
     id: Uuid,
 }
 
-#[derive(Clone)]
 pub struct SharedMemory<T: Copy> {
     arr: Vec<Atomic<T>>,
 }
@@ -82,7 +86,7 @@ impl<T: Copy + Default + 'static + Send> SharedMemory<T> {
         self.arr[ind].get()
     }
 
-    pub fn set(&mut self, ind: usize, val: T) -> PendingResult<T> {
+    pub fn set(&self, ind: usize, val: T) -> PendingResult<T> {
         self.arr[ind].set(val)
     }
 }
@@ -176,7 +180,7 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
         }
     }
 
-    pub fn set(&mut self, val: T) -> PendingResult<T> {
+    pub fn set(&self, val: T) -> PendingResult<T> {
         let value = Rc::new(UnsafeCell::new(val));
 
         let vclone = self.value.clone();
@@ -204,15 +208,23 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct System {}
+#[derive(Copy, Clone, PartialEq)]
+pub enum MemoryModel {
+    ARM,
+    Intel,
+}
+
+#[derive(Clone)]
+pub struct System {
+    model: MemoryModel,
+}
 
 impl System {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(model: MemoryModel) -> Self {
+        Self { model }
     }
 
-    pub fn get_op(ops: &mut Vec<Operation>, ind: usize) -> Option<Operation> {
+    pub fn get_op(&self, ops: &mut Vec<Operation>, ind: usize) -> Option<Operation> {
         if ops.is_empty() {
             return None;
         }
@@ -220,7 +232,7 @@ impl System {
         let ind = ind % ops.len();
 
         for x in 0..ind {
-            if ops[x].blocks(&ops[ind]) {
+            if ops[x].blocks(&ops[ind], self.model) {
                 return None;
             }
         }
@@ -268,7 +280,7 @@ impl System {
             let parked_count = sys_info.parked.load(SeqCst);
 
             if finished_count + parked_count == handles.len() {
-                if let Some(o) = Self::get_op(&mut operations, rng.next_u64() as usize) {
+                if let Some(o) = self.get_op(&mut operations, rng.next_u64() as usize) {
                     o.execute.as_ref()();
                 }
             }
