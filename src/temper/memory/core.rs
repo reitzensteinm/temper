@@ -3,7 +3,7 @@ use std::any::Any;
 use std::cell::UnsafeCell;
 use std::ops::Deref;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard};
 use uuid::Uuid;
 
@@ -82,9 +82,8 @@ impl MemoryOp {
 }
 
 pub struct PendingResult<T: Copy> {
-    value_slot: Arc<Mutex<Option<T>>>,
+    result: Arc<Mutex<Option<T>>>,
     value: Rc<UnsafeCell<T>>,
-    executed: Arc<AtomicBool>,
 }
 
 pub struct Atomic<T: Copy> {
@@ -118,7 +117,8 @@ impl<T: Copy> Deref for PendingResult<T> {
     fn deref(&self) -> &T {
         let mut taken = false;
 
-        while !self.executed.load(Ordering::Relaxed) {
+        while self.result.lock().unwrap().is_none() {
+            // We can't park if the value exists; this will cause race conditions
             if !taken {
                 with_system(|s| s.parked.fetch_add(1, Ordering::SeqCst));
                 taken = true;
@@ -129,7 +129,7 @@ impl<T: Copy> Deref for PendingResult<T> {
             with_system(|s| s.parked.fetch_sub(1, Ordering::SeqCst));
         }
 
-        let v = self.value_slot.lock().unwrap();
+        let v = self.result.lock().unwrap();
 
         unsafe {
             *self.value.get() = v.unwrap();
@@ -163,7 +163,7 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
         Self::queue_op(Uuid::new_v4(), MemoryOpType::Fence, move || {});
     }
 
-    pub fn self_op<F: Fn(MutexGuard<T>) -> Option<T> + Send + 'static>(
+    pub fn self_op<F: Fn(MutexGuard<T>) -> T + Send + 'static>(
         &self,
         op: MemoryOpType,
         f: F,
@@ -171,36 +171,28 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
         let value = Rc::new(UnsafeCell::new(T::default()));
 
         let vclone = self.value.clone();
-        let executed = Arc::new(AtomicBool::new(false));
-        let value_slot = Arc::new(Mutex::new(None));
+        let result = Arc::new(Mutex::new(None));
 
         {
-            let executed = executed.clone();
-            let value_slot = value_slot.clone();
+            let value_slot = result.clone();
             Self::queue_op(self.id, op, move || {
                 let v = vclone.lock().unwrap();
 
-                *value_slot.lock().unwrap() = f(v);
-
-                executed.store(true, Ordering::Relaxed);
+                *value_slot.lock().unwrap() = Some(f(v));
             });
         }
 
-        PendingResult {
-            value,
-            executed,
-            value_slot,
-        }
+        PendingResult { value, result }
     }
 
     pub fn get(&self) -> PendingResult<T> {
-        self.self_op(MemoryOpType::Get, move |v| Some(*v))
+        self.self_op(MemoryOpType::Get, move |v| *v)
     }
 
     pub fn set(&self, val: T) -> PendingResult<T> {
         self.self_op(MemoryOpType::Set, move |mut v| {
             *v = val;
-            Some(val)
+            val
         })
     }
 }
