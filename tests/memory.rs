@@ -129,13 +129,14 @@ fn test_queue(iters: usize, model: MemoryModel) -> Vec<usize> {
 
 #[test]
 fn test_queue_runner() {
-    let expected = (0..5).sum();
+    let size = 20;
+    let expected = (0..size).sum();
     assert!(run_until(
-        || test_queue(5, MemoryModel::ARM),
+        || test_queue(size, MemoryModel::ARM),
         vec![vec![expected]]
     ));
     assert!(run_until(
-        || test_queue(5, MemoryModel::Intel),
+        || test_queue(size, MemoryModel::Intel),
         vec![vec![expected]]
     ));
 }
