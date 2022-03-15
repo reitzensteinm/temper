@@ -4,7 +4,8 @@ mod common;
 
 use common::utils::{run_until, Test};
 
-use temper::temper::memory::core::{Atomic, MemoryModel, System};
+use temper::temper::memory::core::{set_model, Atomic, MemoryModel};
+use temper::temper::system::core::System;
 
 /* From Intel's memory model documentation
 
@@ -21,7 +22,8 @@ If a memfence is present, (0,0) is not a valid result
 */
 
 fn test_a(memfence: bool) -> Vec<usize> {
-    let s = System::new(MemoryModel::Intel);
+    set_model(MemoryModel::Intel);
+    let s = System::new();
 
     let test = Test::default();
 
@@ -72,7 +74,9 @@ fn test_a_runner() {
 
 fn test_queue(iters: usize, model: MemoryModel) -> Vec<usize> {
     //let start = Utc::now();
-    let system = System::new(model);
+    set_model(model);
+    let system = System::new();
+
     let test = Test::default();
 
     let fa = {
