@@ -4,8 +4,21 @@ use std::cell::UnsafeCell;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use uuid::Uuid;
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum MemoryModel {
+    ARM,
+    Intel,
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum MemoryOpType {
+    Get,
+    Set,
+    Fence,
+}
 
 thread_local! {
     pub static MODEL: Mutex<Option<MemoryModel>> = Mutex::new(None);
@@ -17,13 +30,6 @@ pub fn get_model() -> Option<MemoryModel> {
 
 pub fn set_model(model: MemoryModel) {
     MODEL.with(|v| *v.lock().unwrap() = Some(model))
-}
-
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub enum MemoryOpType {
-    Get,
-    Set,
-    Fence,
 }
 
 pub struct MemoryOp {
@@ -157,7 +163,11 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
         Self::queue_op(Uuid::new_v4(), MemoryOpType::Fence, move || {});
     }
 
-    pub fn get(&self) -> PendingResult<T> {
+    pub fn self_op<F: Fn(MutexGuard<T>) -> Option<T> + Send + 'static>(
+        &self,
+        op: MemoryOpType,
+        f: F,
+    ) -> PendingResult<T> {
         let value = Rc::new(UnsafeCell::new(T::default()));
 
         let vclone = self.value.clone();
@@ -167,10 +177,10 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
         {
             let executed = executed.clone();
             let value_slot = value_slot.clone();
-            Self::queue_op(self.id, MemoryOpType::Get, move || {
-                let v = *vclone.lock().unwrap();
+            Self::queue_op(self.id, op, move || {
+                let v = vclone.lock().unwrap();
 
-                *value_slot.lock().unwrap() = Some(v);
+                *value_slot.lock().unwrap() = f(v);
 
                 executed.store(true, Ordering::Relaxed);
             });
@@ -181,53 +191,16 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
             executed,
             value_slot,
         }
+    }
+
+    pub fn get(&self) -> PendingResult<T> {
+        self.self_op(MemoryOpType::Get, move |v| Some(*v))
     }
 
     pub fn set(&self, val: T) -> PendingResult<T> {
-        let value = Rc::new(UnsafeCell::new(val));
-
-        let vclone = self.value.clone();
-        let executed = Arc::new(AtomicBool::new(false));
-        let value_slot = Arc::new(Mutex::new(None));
-
-        {
-            let executed = executed.clone();
-            let value_slot = value_slot.clone();
-
-            Self::queue_op(self.id, MemoryOpType::Set, move || {
-                *vclone.lock().unwrap() = val;
-
-                *value_slot.lock().unwrap() = Some(val);
-
-                executed.store(true, Ordering::Relaxed);
-            });
-        }
-
-        PendingResult {
-            value,
-            executed,
-            value_slot,
-        }
+        self.self_op(MemoryOpType::Set, move |mut v| {
+            *v = val;
+            Some(val)
+        })
     }
 }
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum MemoryModel {
-    ARM,
-    Intel,
-}
-
-/*
-
-
-#[derive(Clone)]
-pub struct MemorySystem {
-    model: MemoryModel,
-}
-
-impl MemorySystem {
-    pub fn new(model: MemoryModel) -> Self {
-        Self { model }
-    }
-}
-*/

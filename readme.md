@@ -32,3 +32,4 @@
 2) Netsplits
 3) False sharing analysis?
 4) Fuzz corrupted messages/disk
+5) Guards or linting to ensure we don't immediately consume values

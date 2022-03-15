@@ -58,7 +58,6 @@ impl System {
 
         let ind = ind % ops.len();
 
-        //, self.model
         for x in 0..ind {
             if ops[x].op.blocks(ops[ind].op.as_ref()) {
                 return None;
