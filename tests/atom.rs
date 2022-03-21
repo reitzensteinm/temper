@@ -30,11 +30,11 @@ pub fn twostore_seq(x: &AtomicU32, y: &AtomicU32) {
     y.store(1, Ordering::SeqCst)
 }
 
-pub fn twoload_set_seq(x: &AtomicU32, y: &AtomicU32) {
+pub fn twoload_set_seq(x: &AtomicU32, _y: &AtomicU32) {
     x.store(1, Ordering::SeqCst)
 }
 
-pub fn twoload_set_release(x: &AtomicU32, y: &AtomicU32) {
+pub fn twoload_set_release(_x: &AtomicU32, y: &AtomicU32) {
     y.store(1, Ordering::Release)
 }
 
