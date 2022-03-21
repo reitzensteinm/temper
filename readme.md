@@ -33,3 +33,11 @@
 3) False sharing analysis?
 4) Fuzz corrupted messages/disk
 5) Guards or linting to ensure we don't immediately consume values
+
+### Things to consider
+
+1) Do we go with LoadLoad, StoreStore etc barrier designation?
+2) How is a LoadStore barrier different to Sequential Consistency?
+3) Do we need to rename atomics?
+4) Detecting sheared shared memory buffer?
+5) ARM has dependent load memory ordering
