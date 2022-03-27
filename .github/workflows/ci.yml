@@ -20,7 +20,8 @@ jobs:
           toolchain: stable
       - uses: actions-rs/cargo@v1
         with:
-          command: test --workspace
+          command: test
+          args: --workspace
 
   clippy:
     name: Clippy
