@@ -1,3 +1,9 @@
+[workspace]
+
+members = [
+    "memlog",
+]
+
 [package]
 name = "temper"
 version = "0.1.0"
