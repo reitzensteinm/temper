@@ -48,33 +48,34 @@ impl MemorySystem {
         })
     }
 
-    pub fn load(&mut self, thread: usize, addr: usize, level: Ordering) -> usize {
+    pub fn load(&mut self, _thread: usize, _addr: usize, _level: Ordering) -> usize {
         //        let mut possible_values = vec![];
 
-        let mut self_value = None;
+        /*
+                let mut self_value = None;
 
-        for x in self.log.iter().rev() {
-            if x.thread == thread {
-                match x.op {
-                    OperationType::Store(addr, val) => {
-                        self_value = Some(val);
-                        break;
+                for x in self.log.iter().rev() {
+                    if x.thread == thread {
+                        match x.op {
+                            OperationType::Store(addr, val) => {
+                                self_value = Some(val);
+                                break;
+                            }
+                            // OperationType::Load(addr, val) => {
+                            //     self_value = Some(val);
+                            //     break;
+                            // }
+                            OperationType::Fence => {}
+                        }
+                    } else {
+                        if let OperationType::Store(oa, val) = &x.op {
+                            if *oa == addr {
+                                println!("Got Operation");
+                            }
+                        }
                     }
-                    // OperationType::Load(addr, val) => {
-                    //     self_value = Some(val);
-                    //     break;
-                    // }
-                    OperationType::Fence => {}
                 }
-            } else {
-                if let OperationType::Store(oa, val) = &x.op {
-                    if *oa == addr {
-                        println!("Got Operation");
-                    }
-                }
-            }
-        }
-
+        */
         //println!("{:?}", possible_values);
 
         todo!()
