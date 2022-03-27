@@ -56,6 +56,10 @@ checksum = "1bf2e165bb3457c8e098ea76f3e3bc9db55f87aa90d52d0e6be741470916aaa4"
 [[package]]
 name = "memlog"
 version = "0.1.0"
+dependencies = [
+ "rand",
+ "rand_chacha",
+]
 
 [[package]]
 name = "num-integer"

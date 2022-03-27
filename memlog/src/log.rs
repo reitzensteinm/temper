@@ -11,6 +11,9 @@ pub enum MemoryLevel {
     SeqCst,
 }*/
 
+use rand::{RngCore, SeedableRng};
+use rand_chacha::ChaCha8Rng;
+use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
 pub enum OperationType {
@@ -27,28 +30,62 @@ pub struct MemoryOperation {
     pub op: OperationType,
 }
 
+#[derive(Default)]
+pub struct ThreadView {
+    pub sequence: usize,
+    pub mem_sequence: HashMap<usize, usize>,
+}
+
 //pub struct MemoryCell {}
 
 pub struct MemorySystem {
-    pub thread_sequence: Vec<usize>,
     pub global_sequence: usize,
     pub log: Vec<MemoryOperation>,
+    pub threads: Vec<ThreadView>,
 }
 
 impl MemorySystem {
     pub fn store(&mut self, thread: usize, addr: usize, val: usize, level: Ordering) {
         self.global_sequence += 1;
-        self.thread_sequence[thread] += 1;
+        self.threads[thread].sequence += 1;
         self.log.push(MemoryOperation {
             thread,
-            thread_sequence: self.thread_sequence[thread],
+            thread_sequence: self.threads[thread].sequence,
             global_sequence: self.global_sequence,
             level,
             op: OperationType::Store(addr, val),
         })
     }
 
-    pub fn load(&mut self, _thread: usize, _addr: usize, _level: Ordering) -> usize {
+    pub fn load(&mut self, thread: usize, _addr: usize, _level: Ordering) -> usize {
+        let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
+        let mut rng = ChaCha8Rng::seed_from_u64(s);
+
+        let view = &mut self.threads[thread];
+
+        let possible: Vec<&MemoryOperation> = self
+            .log
+            .iter()
+            .filter(|mo| match mo.op {
+                OperationType::Store(addr, _) => {
+                    mo.global_sequence >= *view.mem_sequence.get(&addr).unwrap_or(&0_usize)
+                }
+                OperationType::Fence => false,
+            })
+            .collect();
+
+        let choice = possible[(rng.next_u32() as usize) % possible.len()];
+
+        match choice.op {
+            OperationType::Store(loc, val) => {
+                view.mem_sequence.insert(loc, choice.global_sequence);
+                val
+            }
+            OperationType::Fence => {
+                todo!()
+            }
+        }
+
         //        let mut possible_values = vec![];
 
         /*
@@ -77,8 +114,6 @@ impl MemorySystem {
                 }
         */
         //println!("{:?}", possible_values);
-
-        todo!()
     }
 
     // pub fn add_thread(&mut self) {
@@ -95,7 +130,7 @@ impl MemorySystem {
 impl Default for MemorySystem {
     fn default() -> Self {
         MemorySystem {
-            thread_sequence: vec![0, 0, 0, 0],
+            threads: vec![ThreadView::default(), ThreadView::default()],
             global_sequence: 0,
             log: vec![],
         }
