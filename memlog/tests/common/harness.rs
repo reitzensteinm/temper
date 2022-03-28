@@ -93,7 +93,7 @@ impl LogTest {
             let mut all_finished = true;
             let mut all_waiting = true;
             for tsm in threads.iter() {
-                let mut ts = tsm.lock().unwrap();
+                let ts = tsm.lock().unwrap();
                 if !ts.finished {
                     all_finished = false;
 

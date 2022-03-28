@@ -74,7 +74,7 @@ impl MemorySystem {
             })
             .collect();
 
-        if possible.len() == 0 {
+        if possible.is_empty() {
             //Todo: default memory
             return 0;
         }

@@ -1,5 +1,4 @@
 use crate::common::harness::{Environment, LogTest};
-use memlog::log::MemorySystem;
 use std::sync::atomic::Ordering;
 
 mod common;
@@ -10,7 +9,7 @@ fn test_harness() {
 
     let fa = |mut eg: Environment| {
         let mut last = None;
-        for x in 0..=5 {
+        for _ in 0..=5 {
             let l = eg.a.load(Ordering::Relaxed);
             if let Some(v) = last {
                 assert!(v <= l);
