@@ -74,6 +74,11 @@ impl MemorySystem {
             })
             .collect();
 
+        if possible.len() == 0 {
+            //Todo: default memory
+            return 0;
+        }
+
         let choice = possible[(rng.next_u32() as usize) % possible.len()];
 
         match choice.op {

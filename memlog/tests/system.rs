@@ -1,36 +1,30 @@
+use crate::common::harness::{Environment, LogTest};
 use memlog::log::MemorySystem;
 use std::sync::atomic::Ordering;
 
 mod common;
 
 #[test]
-fn test_system() {
-    let mut ms = MemorySystem::default();
-    for x in 0..=5 {
-        ms.store(0, 0, x, Ordering::Relaxed);
-    }
+fn test_harness() {
+    let lt = LogTest::default();
 
-    let mut last = None;
-    for _x in 0..5 {
-        let v = ms.load(1, 0, Ordering::Relaxed);
-
-        if let Some(x) = last {
-            assert!(v >= x);
+    let fa = |mut eg: Environment| {
+        let mut last = None;
+        for x in 0..=5 {
+            let l = eg.a.load(Ordering::Relaxed);
+            if let Some(v) = last {
+                assert!(v <= l);
+            }
+            last = Some(l);
         }
+    };
+    let fb = |mut eg: Environment| {
+        for x in 0..=5 {
+            eg.a.store(x, Ordering::Relaxed);
+        }
+    };
 
-        println!("Got {}", v);
+    let fns: Vec<Box<dyn FnMut(Environment) + Send>> = vec![Box::new(fa), Box::new(fb)];
 
-        last = Some(v);
-    }
-
-    /*
-
-    for x in 0..5 {
-        ms.store(0, 0, x, MemoryLevel::Relaxed);
-    }
-
-    //ms.store(0, 1, 1, MemoryLevel::Relaxed);
-    let v = ms.load(1, 0, MemoryLevel::Relaxed);
-
-    println!("{}", v);*/
+    lt.run(fns);
 }
