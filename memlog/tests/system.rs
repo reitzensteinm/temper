@@ -7,9 +7,11 @@ mod common;
 fn test_harness() {
     let lt = LogTest::default();
 
+    const ITERS: usize = 100;
+
     let fa = |mut eg: Environment| {
         let mut last = None;
-        for _ in 0..=5 {
+        for _ in 0..=ITERS {
             let l = eg.a.load(Ordering::Relaxed);
             if let Some(v) = last {
                 assert!(v <= l);
@@ -18,7 +20,7 @@ fn test_harness() {
         }
     };
     let fb = |mut eg: Environment| {
-        for x in 0..=5 {
+        for x in 0..=ITERS {
             eg.a.store(x, Ordering::Relaxed);
         }
     };

@@ -42,17 +42,6 @@ pub struct Environment {
     pub a: Value,
 }
 
-// pub struct EnvironmentGuard {
-//     pub thread: usize,
-//     pub environment: Arc<Mutex<Environment>>,
-// }
-//
-// impl EnvironmentGuard {
-//     pub fn get<'a>(&self) -> MutexGuard<'a, Environment> {
-//         todo!()
-//     }
-// }
-
 #[derive(Default)]
 pub struct LogTest {}
 
