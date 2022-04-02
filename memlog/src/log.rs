@@ -42,7 +42,11 @@ impl MemorySystem {
             global_sequence: self.global_sequence,
             level,
             op: OperationType::Store(addr, val),
-        })
+        });
+
+        self.threads[thread]
+            .mem_sequence
+            .insert(addr, self.global_sequence);
     }
 
     pub fn load(&mut self, thread: usize, addr: usize, _level: Ordering) -> usize {
