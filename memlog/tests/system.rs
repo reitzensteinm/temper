@@ -68,3 +68,28 @@ fn test_intel_failure() {
         vec![vec![0, 0], vec![0, 1], vec![1, 0], vec![1, 1]]
     ));
 }
+
+#[test]
+fn test_acq_rel() {
+    fn acq_rel() -> Vec<isize> {
+        let mut lt = LogTest::default();
+
+        lt.add(|mut eg: Environment| {
+            eg.b.store(1, Ordering::Relaxed);
+            eg.a.store(1, Ordering::Release);
+            0
+        });
+
+        lt.add(|mut eg: Environment| {
+            let a = eg.a.load(Ordering::Acquire);
+            let b = eg.b.load(Ordering::Relaxed);
+            // The acquire on A should synchronize with the other thread's release on A
+            // If the value of (b-a) is negative, this thread has seen the write to A but not B
+            (b as isize) - (a as isize)
+        });
+
+        lt.run()
+    }
+
+    assert!(run_until(acq_rel, vec![vec![0, 0], vec![0, 1]]));
+}

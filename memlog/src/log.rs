@@ -10,6 +10,25 @@ pub enum OperationType {
     Fence,
 }
 
+#[derive(Default, Debug, Clone)]
+pub struct MemorySequence {
+    pub sequence: HashMap<usize, usize>,
+}
+
+impl MemorySequence {
+    pub fn synchronize(&mut self, other: &MemorySequence) {
+        for (k, v) in other.sequence.iter() {
+            let res = if let Some(ev) = self.sequence.get(k) {
+                (*ev).max(*v)
+            } else {
+                *v
+            };
+
+            self.sequence.insert(*k, res);
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct MemoryOperation {
     pub thread: usize,
@@ -17,12 +36,13 @@ pub struct MemoryOperation {
     pub global_sequence: usize,
     pub level: Ordering,
     pub op: OperationType,
+    pub source_sequence: MemorySequence,
 }
 
 #[derive(Default)]
 pub struct ThreadView {
     pub sequence: usize,
-    pub mem_sequence: HashMap<usize, usize>,
+    pub mem_sequence: MemorySequence,
 }
 
 pub struct MemorySystem {
@@ -35,21 +55,24 @@ pub struct MemorySystem {
 impl MemorySystem {
     pub fn store(&mut self, thread: usize, addr: usize, val: usize, level: Ordering) {
         self.global_sequence += 1;
-        self.threads[thread].sequence += 1;
+        let view = &mut self.threads[thread];
+        view.sequence += 1;
+        view.mem_sequence
+            .sequence
+            .insert(addr, self.global_sequence);
+
+        //println!("Mem Sequence {:?}", view.mem_sequence);
         self.log.push(MemoryOperation {
             thread,
-            thread_sequence: self.threads[thread].sequence,
+            thread_sequence: view.sequence,
             global_sequence: self.global_sequence,
             level,
+            source_sequence: view.mem_sequence.clone(),
             op: OperationType::Store(addr, val),
         });
-
-        self.threads[thread]
-            .mem_sequence
-            .insert(addr, self.global_sequence);
     }
 
-    pub fn load(&mut self, thread: usize, addr: usize, _level: Ordering) -> usize {
+    pub fn load(&mut self, thread: usize, addr: usize, level: Ordering) -> usize {
         let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
         let mut rng = ChaCha8Rng::seed_from_u64(s);
 
@@ -69,7 +92,7 @@ impl MemorySystem {
             .iter()
             .position(|mo| match mo.op {
                 OperationType::Store(a, _) => {
-                    mo.global_sequence >= *view.mem_sequence.get(&a).unwrap_or(&0_usize)
+                    mo.global_sequence >= *view.mem_sequence.sequence.get(&a).unwrap_or(&0_usize)
                 }
                 OperationType::Fence => false,
             })
@@ -90,9 +113,18 @@ impl MemorySystem {
 
         let choice = possible[(rng.next_u32() as usize) % possible.len()];
 
+        // Todo: Where does AcqRel fit in to this?
+        if (choice.level == Ordering::Release || choice.level == Ordering::SeqCst)
+            && (level == Ordering::SeqCst || level == Ordering::Acquire)
+        {
+            view.mem_sequence.synchronize(&choice.source_sequence);
+        }
+
         match choice.op {
             OperationType::Store(loc, val) => {
-                view.mem_sequence.insert(loc, choice.global_sequence);
+                view.mem_sequence
+                    .sequence
+                    .insert(loc, choice.global_sequence);
                 val
             }
             OperationType::Fence => {
@@ -106,13 +138,15 @@ impl Default for MemorySystem {
     fn default() -> Self {
         let mut acc = vec![];
 
-        for i in 0..100 {
+        // Todo: Allocate the right number of buckets! malloc!()
+        for i in 0..10 {
             acc.push(MemoryOperation {
                 thread: 0,
                 thread_sequence: 0,
                 global_sequence: 0,
                 level: Ordering::Relaxed,
                 op: OperationType::Store(i, 0),
+                source_sequence: Default::default(),
             })
         }
 
