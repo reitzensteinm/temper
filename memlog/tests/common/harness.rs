@@ -40,13 +40,17 @@ impl Value {
 
 pub struct Environment {
     pub a: Value,
+    pub b: Value,
 }
 
 #[derive(Default)]
 pub struct LogTest {}
 
 impl LogTest {
-    pub fn run<F: FnMut(Environment) + Send + 'static + ?Sized>(self, mut fns: Vec<Box<F>>) {
+    pub fn run<T: Copy + Send + 'static, F: FnMut(Environment) -> T + Send + 'static + ?Sized>(
+        self,
+        mut fns: Vec<Box<F>>,
+    ) -> Vec<T> {
         let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
         let mut rng = ChaCha8Rng::seed_from_u64(s);
 
@@ -70,11 +74,18 @@ impl LogTest {
                     thread_state: ts.clone(),
                     memory: ms.clone(),
                 },
+                b: Value {
+                    thread: i,
+                    addr: 1,
+                    thread_state: ts.clone(),
+                    memory: ms.clone(),
+                },
             };
 
             handles.push(thread::spawn(move || {
-                f(env);
+                let res: T = f(env);
                 ts.lock().unwrap().finished = true;
+                res
             }));
         }
 
@@ -107,8 +118,12 @@ impl LogTest {
             }
         }
 
+        let mut res = vec![];
+
         for h in handles.drain(..) {
-            h.join().unwrap();
+            res.push(h.join().unwrap())
         }
+
+        res
     }
 }

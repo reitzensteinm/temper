@@ -1,27 +1,16 @@
-//pub struct MemoryThread {}
-
-//use crate::temper::memory::core::{MemoryOp, MemoryOpType};
-
-/*
-pub enum MemoryLevel {
-    Relaxed,
-    Acquire,
-    Release,
-    AcqRel,
-    SeqCst,
-}*/
-
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
+#[derive(Debug)]
 pub enum OperationType {
     Store(usize, usize),
     //Load(usize, usize),
     Fence,
 }
 
+#[derive(Debug)]
 pub struct MemoryOperation {
     pub thread: usize,
     pub thread_sequence: usize,
@@ -36,11 +25,10 @@ pub struct ThreadView {
     pub mem_sequence: HashMap<usize, usize>,
 }
 
-//pub struct MemoryCell {}
-
 pub struct MemorySystem {
     pub global_sequence: usize,
     pub log: Vec<MemoryOperation>,
+    pub acc: Vec<MemoryOperation>,
     pub threads: Vec<ThreadView>,
 }
 
@@ -57,27 +45,44 @@ impl MemorySystem {
         })
     }
 
-    pub fn load(&mut self, thread: usize, _addr: usize, _level: Ordering) -> usize {
+    pub fn load(&mut self, thread: usize, addr: usize, _level: Ordering) -> usize {
         let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
         let mut rng = ChaCha8Rng::seed_from_u64(s);
 
         let view = &mut self.threads[thread];
 
-        let possible: Vec<&MemoryOperation> = self
-            .log
-            .iter()
+        let all_ops = std::iter::once(&self.acc[addr]).chain(self.log.iter());
+
+        let possible: Vec<&MemoryOperation> = all_ops
             .filter(|mo| match mo.op {
-                OperationType::Store(addr, _) => {
-                    mo.global_sequence >= *view.mem_sequence.get(&addr).unwrap_or(&0_usize)
-                }
+                // Todo: Is the global sequence the only correct here?
+                OperationType::Store(a, _) => a == addr,
                 OperationType::Fence => false,
             })
             .collect();
 
-        if possible.is_empty() {
-            //Todo: default memory
-            return 0;
-        }
+        let first_ind = possible
+            .iter()
+            .position(|mo| match mo.op {
+                OperationType::Store(a, _) => {
+                    mo.global_sequence >= *view.mem_sequence.get(&a).unwrap_or(&0_usize)
+                }
+                OperationType::Fence => false,
+            })
+            .unwrap_or(0_usize);
+
+        /*
+        println!(
+            "{} {}",
+            first_ind,
+            *view.mem_sequence.get(&0).unwrap_or(&5_usize)
+        );
+
+        for p in possible.iter() {
+            println!("{:?}", p);
+        }*/
+
+        let possible = &possible[first_ind..];
 
         let choice = possible[(rng.next_u32() as usize) % possible.len()];
 
@@ -90,53 +95,27 @@ impl MemorySystem {
                 todo!()
             }
         }
-
-        //        let mut possible_values = vec![];
-
-        /*
-                let mut self_value = None;
-
-                for x in self.log.iter().rev() {
-                    if x.thread == thread {
-                        match x.op {
-                            OperationType::Store(addr, val) => {
-                                self_value = Some(val);
-                                break;
-                            }
-                            // OperationType::Load(addr, val) => {
-                            //     self_value = Some(val);
-                            //     break;
-                            // }
-                            OperationType::Fence => {}
-                        }
-                    } else {
-                        if let OperationType::Store(oa, val) = &x.op {
-                            if *oa == addr {
-                                println!("Got Operation");
-                            }
-                        }
-                    }
-                }
-        */
-        //println!("{:?}", possible_values);
     }
-
-    // pub fn add_thread(&mut self) {
-    //     self.threads.push(MemoryThread::default());
-    // }
 }
-//
-// impl Default for MemoryThread {
-//     fn default() -> Self {
-//         MemoryThread {}
-//     }
-// }
 
 impl Default for MemorySystem {
     fn default() -> Self {
+        let mut acc = vec![];
+
+        for i in 0..100 {
+            acc.push(MemoryOperation {
+                thread: 0,
+                thread_sequence: 0,
+                global_sequence: 0,
+                level: Ordering::Relaxed,
+                op: OperationType::Store(i, 0),
+            })
+        }
+
         MemorySystem {
             threads: vec![ThreadView::default(), ThreadView::default()],
-            global_sequence: 0,
+            acc,
+            global_sequence: 10,
             log: vec![],
         }
     }
