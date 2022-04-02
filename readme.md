@@ -41,3 +41,4 @@
 3) Do we need to rename atomics?
 4) Detecting sheared shared memory buffer?
 5) ARM has dependent load memory ordering
+6) Use condition variables to properly sleep threads
