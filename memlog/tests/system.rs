@@ -93,3 +93,83 @@ fn test_acq_rel() {
 
     assert!(run_until(acq_rel, vec![vec![0, 0], vec![0, 1]]));
 }
+
+#[test]
+// With Release/Acquire ordering, threads 3 and 4 can perceive the writes
+// to threads 1 and 2 in different orders
+fn test_orders() {
+    fn orders() -> Vec<isize> {
+        let mut lt = LogTest::default();
+
+        lt.add(|mut eg: Environment| {
+            eg.a.store(1, Ordering::Release);
+            0
+        });
+
+        lt.add(|mut eg: Environment| {
+            eg.b.store(1, Ordering::Release);
+            0
+        });
+
+        lt.add(|mut eg: Environment| {
+            let a = eg.a.load(Ordering::Acquire);
+            let b = eg.b.load(Ordering::Relaxed);
+            (b as isize) - (a as isize)
+        });
+
+        lt.add(|mut eg: Environment| {
+            let a = eg.a.load(Ordering::Acquire);
+            let b = eg.b.load(Ordering::Relaxed);
+            (b as isize) - (a as isize)
+        });
+
+        lt.run()
+    }
+
+    let mut poss = vec![];
+    for pa in -1..=1 {
+        for pb in -1..=1 {
+            poss.push(vec![0, 0, pa, pb]);
+        }
+    }
+
+    assert!(run_until(orders, poss));
+}
+
+#[test]
+fn test_orders_seq_cst() {
+    fn orders() -> Vec<isize> {
+        let mut lt = LogTest::default();
+
+        lt.add(|mut eg: Environment| {
+            eg.a.store(1, Ordering::SeqCst);
+            0
+        });
+
+        lt.add(|mut eg: Environment| {
+            eg.b.store(1, Ordering::SeqCst);
+            0
+        });
+
+        lt.add(|mut eg: Environment| {
+            let a = eg.a.load(Ordering::SeqCst);
+            let b = eg.b.load(Ordering::SeqCst);
+            (b as isize) - (a as isize)
+        });
+
+        lt.add(|mut eg: Environment| {
+            let a = eg.a.load(Ordering::SeqCst);
+            let b = eg.b.load(Ordering::SeqCst);
+            (b as isize) - (a as isize)
+        });
+
+        lt.run()
+    }
+
+    let mut poss = vec![];
+    for p in -1..=1 {
+        poss.push(vec![0, 0, p, p]);
+    }
+
+    assert!(run_until(orders, poss));
+}

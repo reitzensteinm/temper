@@ -151,7 +151,12 @@ impl Default for MemorySystem {
         }
 
         MemorySystem {
-            threads: vec![ThreadView::default(), ThreadView::default()],
+            threads: vec![
+                ThreadView::default(),
+                ThreadView::default(),
+                ThreadView::default(),
+                ThreadView::default(),
+            ],
             acc,
             global_sequence: 10,
             log: vec![],
