@@ -1,5 +1,5 @@
 use crate::common::harness::{Environment, LogTest};
-use std::collections::HashSet;
+use crate::common::utils::run_until;
 use std::sync::atomic::Ordering;
 
 mod common;
@@ -32,8 +32,7 @@ fn test_harness() {
 
 #[test]
 fn test_intel_failure() {
-    let mut results = HashSet::new();
-    for _ in 0..100 {
+    fn intel_failure_inner() -> Vec<usize> {
         let mut lt = LogTest::default();
 
         lt.add(|mut eg: Environment| {
@@ -46,14 +45,11 @@ fn test_intel_failure() {
             eg.a.load(Ordering::Relaxed)
         });
 
-        results.insert(lt.run());
+        lt.run()
     }
 
-    let mut expected = HashSet::new();
-
-    for v in vec![vec![0, 0], vec![0, 1], vec![1, 0], vec![1, 1]] {
-        expected.insert(v);
-    }
-
-    assert_eq!(results, expected);
+    assert!(run_until(
+        intel_failure_inner,
+        vec![vec![0, 0], vec![0, 1], vec![1, 0], vec![1, 1]]
+    ));
 }
