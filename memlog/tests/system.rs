@@ -6,11 +6,11 @@ mod common;
 
 #[test]
 fn test_harness() {
-    let lt = LogTest::default();
+    let mut lt = LogTest::default();
 
-    const ITERS: usize = 5;
+    const ITERS: usize = 100;
 
-    let fa = |mut eg: Environment| {
+    lt.add(|mut eg: Environment| {
         let mut last = None;
         for _ in 0..=ITERS {
             let l = eg.a.load(Ordering::Relaxed);
@@ -19,37 +19,34 @@ fn test_harness() {
             }
             last = Some(l);
         }
-    };
-    let fb = |mut eg: Environment| {
+    });
+
+    lt.add(|mut eg: Environment| {
         for x in 0..=ITERS {
             eg.a.store(x, Ordering::Relaxed);
         }
-    };
+    });
 
-    let fns: Vec<Box<dyn FnMut(Environment) + Send>> = vec![Box::new(fa), Box::new(fb)];
-
-    lt.run(fns);
+    lt.run();
 }
 
 #[test]
 fn test_intel_failure() {
     let mut results = HashSet::new();
     for _ in 0..100 {
-        let lt = LogTest::default();
+        let mut lt = LogTest::default();
 
-        let fa = |mut eg: Environment| {
+        lt.add(|mut eg: Environment| {
             eg.a.store(1, Ordering::Relaxed);
             eg.b.load(Ordering::Relaxed)
-        };
-        let fb = |mut eg: Environment| {
+        });
+
+        lt.add(|mut eg: Environment| {
             eg.b.store(1, Ordering::Relaxed);
             eg.a.load(Ordering::Relaxed)
-        };
+        });
 
-        let fns: Vec<Box<dyn FnMut(Environment) -> usize + Send>> =
-            vec![Box::new(fa), Box::new(fb)];
-
-        results.insert(lt.run(fns));
+        results.insert(lt.run());
     }
 
     let mut expected = HashSet::new();

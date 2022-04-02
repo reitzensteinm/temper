@@ -44,20 +44,23 @@ pub struct Environment {
 }
 
 #[derive(Default)]
-pub struct LogTest {}
+pub struct LogTest<T: Copy + Send + 'static> {
+    pub fns: Vec<Box<dyn FnMut(Environment) -> T + Send>>,
+}
 
-impl LogTest {
-    pub fn run<T: Copy + Send + 'static, F: FnMut(Environment) -> T + Send + 'static + ?Sized>(
-        self,
-        mut fns: Vec<Box<F>>,
-    ) -> Vec<T> {
+impl<T: Copy + Send + 'static> LogTest<T> {
+    pub fn add<F: FnMut(Environment) -> T + Send + 'static + Sized>(&mut self, f: F) {
+        self.fns.push(Box::new(f))
+    }
+
+    pub fn run(&mut self) -> Vec<T> {
         let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
         let mut rng = ChaCha8Rng::seed_from_u64(s);
 
         let mut handles = vec![];
         let ms = Arc::new(Mutex::new(MemorySystem::default()));
         let mut threads = vec![];
-        for (i, mut f) in fns.drain(..).enumerate() {
+        for (i, mut f) in self.fns.drain(..).enumerate() {
             let ts = Arc::new(Mutex::new(ThreadState {
                 finished: false,
                 waiting: false,
