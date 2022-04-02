@@ -39,13 +39,11 @@ fn test_intel_failure() {
 
         let fa = |mut eg: Environment| {
             eg.a.store(1, Ordering::Relaxed);
-            let v = eg.b.load(Ordering::Relaxed);
-            v
+            eg.b.load(Ordering::Relaxed)
         };
         let fb = |mut eg: Environment| {
             eg.b.store(1, Ordering::Relaxed);
-            let v = eg.a.load(Ordering::Relaxed);
-            v
+            eg.a.load(Ordering::Relaxed)
         };
 
         let fns: Vec<Box<dyn FnMut(Environment) -> usize + Send>> =
