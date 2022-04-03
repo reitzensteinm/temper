@@ -31,6 +31,21 @@ fn test_harness() {
 }
 
 #[test]
+fn test_same_thread_reads() {
+    let mut lt = LogTest::default();
+    const ITERS: usize = 100;
+
+    lt.add(|mut eg: Environment| {
+        for x in 0..=ITERS {
+            eg.a.store(x, Ordering::Relaxed);
+            assert_eq!(x, eg.a.load(Ordering::Relaxed));
+        }
+    });
+
+    lt.run();
+}
+
+#[test]
 fn test_intel_failure() {
     fn intel_failure_inner() -> Vec<usize> {
         let mut lt = LogTest::default();

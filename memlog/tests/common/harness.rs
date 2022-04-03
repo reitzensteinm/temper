@@ -25,6 +25,13 @@ impl Value {
         while self.thread_state.lock().unwrap().waiting {}
     }
 
+    #[allow(unused)]
+    pub fn exchange_weak(&mut self, old: usize, new: usize, ordering: Ordering) -> bool {
+        self.wait();
+        let mut mem = self.memory.lock().unwrap();
+        mem.exchange(self.thread, self.addr, old, new, ordering)
+    }
+
     pub fn load(&mut self, ordering: Ordering) -> usize {
         self.wait();
         let mut mem = self.memory.lock().unwrap();
@@ -41,6 +48,7 @@ impl Value {
 pub struct Environment {
     pub a: Value,
     pub b: Value,
+    pub c: Value,
 }
 
 #[derive(Default)]
@@ -80,6 +88,12 @@ impl<T: Copy + Send + 'static> LogTest<T> {
                 b: Value {
                     thread: i,
                     addr: 1,
+                    thread_state: ts.clone(),
+                    memory: ms.clone(),
+                },
+                c: Value {
+                    thread: i,
+                    addr: 2,
                     thread_state: ts.clone(),
                     memory: ms.clone(),
                 },
