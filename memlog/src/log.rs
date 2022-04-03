@@ -47,6 +47,7 @@ pub struct ThreadView {
 
 pub struct MemorySystem {
     pub global_sequence: usize,
+    pub seq_cst_sequence: MemorySequence,
     pub log: Vec<MemoryOperation>,
     pub acc: Vec<MemoryOperation>,
     pub threads: Vec<ThreadView>,
@@ -60,6 +61,10 @@ impl MemorySystem {
         view.mem_sequence
             .sequence
             .insert(addr, self.global_sequence);
+
+        if level == Ordering::SeqCst {
+            self.seq_cst_sequence.synchronize(&view.mem_sequence);
+        }
 
         //println!("Mem Sequence {:?}", view.mem_sequence);
         self.log.push(MemoryOperation {
@@ -113,6 +118,10 @@ impl MemorySystem {
 
         let choice = possible[(rng.next_u32() as usize) % possible.len()];
 
+        if level == Ordering::SeqCst {
+            view.mem_sequence.synchronize(&self.seq_cst_sequence);
+        }
+
         // Todo: Where does AcqRel fit in to this?
         if (choice.level == Ordering::Release || choice.level == Ordering::SeqCst)
             && (level == Ordering::SeqCst || level == Ordering::Acquire)
@@ -159,6 +168,7 @@ impl Default for MemorySystem {
             ],
             acc,
             global_sequence: 10,
+            seq_cst_sequence: Default::default(),
             log: vec![],
         }
     }
