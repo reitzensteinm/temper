@@ -210,3 +210,41 @@ fn test_5_9() {
 
     assert!(run_until(inner, vec![vec![0, 0, 1]]));
 }
+
+// Todo: Figure out AcqRel semantics for CAS
+
+// Listing 5.10
+// Here, we decide to be more strict than the model described in the book. This is in line with
+// the Temper design philosophy, where the models can be more strict than those they emulate
+// A Relaxed exchange_weak in Thread 2 can break the happens before relationship between
+// Thread 1 and Thread 3, even though it should be a NOP unless Thread 1 happens before Thread 2
+#[test]
+fn test_5_10() {
+    fn inner(exchange_order: Ordering) -> Vec<usize> {
+        let mut lt = LogTest::default();
+
+        lt.add(|mut eg: Environment| {
+            eg.a.store(1, Ordering::Relaxed);
+            eg.b.store(1, Ordering::Release);
+            0
+        });
+
+        lt.add(move |mut eg: Environment| {
+            eg.b.exchange_weak(1, 1, exchange_order);
+            0
+        });
+
+        lt.add(|mut eg: Environment| {
+            while eg.b.load(Ordering::Acquire) == 0 {}
+            eg.a.load(Ordering::Relaxed)
+        });
+
+        lt.run()
+    }
+
+    assert!(run_until(|| inner(Ordering::AcqRel), vec![vec![0, 0, 1]]));
+    assert!(run_until(
+        || inner(Ordering::Relaxed),
+        vec![vec![0, 0, 0], vec![0, 0, 1]]
+    ));
+}

@@ -54,7 +54,46 @@ pub struct MemorySystem {
 }
 
 impl MemorySystem {
+    pub fn exchange(
+        &mut self,
+        thread: usize,
+        addr: usize,
+        expected: usize,
+        new: usize,
+        level: Ordering,
+    ) -> bool {
+        assert!(
+            level == Ordering::Relaxed || level == Ordering::AcqRel || level == Ordering::SeqCst
+        );
+
+        let view = &mut self.threads[thread];
+
+        // CAS operations will
+        view.mem_sequence
+            .sequence
+            .insert(addr, self.global_sequence);
+
+        let (load_ordering, store_ordering) = if level == Ordering::AcqRel {
+            (Ordering::Acquire, Ordering::Release)
+        } else {
+            (level, level)
+        };
+
+        let v = self.load(thread, addr, load_ordering);
+
+        if v == expected {
+            self.store(thread, addr, new, store_ordering);
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn store(&mut self, thread: usize, addr: usize, val: usize, level: Ordering) {
+        assert!(
+            level == Ordering::Relaxed || level == Ordering::Release || level == Ordering::SeqCst
+        );
+
         self.global_sequence += 1;
         let view = &mut self.threads[thread];
         view.sequence += 1;
@@ -78,6 +117,9 @@ impl MemorySystem {
     }
 
     pub fn load(&mut self, thread: usize, addr: usize, level: Ordering) -> usize {
+        assert!(
+            level == Ordering::Relaxed || level == Ordering::Acquire || level == Ordering::SeqCst
+        );
         let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
         let mut rng = ChaCha8Rng::seed_from_u64(s);
 
@@ -103,17 +145,6 @@ impl MemorySystem {
             })
             .unwrap_or(0_usize);
 
-        /*
-        println!(
-            "{} {}",
-            first_ind,
-            *view.mem_sequence.get(&0).unwrap_or(&5_usize)
-        );
-
-        for p in possible.iter() {
-            println!("{:?}", p);
-        }*/
-
         let possible = &possible[first_ind..];
 
         let choice = possible[(rng.next_u32() as usize) % possible.len()];
@@ -122,7 +153,6 @@ impl MemorySystem {
             view.mem_sequence.synchronize(&self.seq_cst_sequence);
         }
 
-        // Todo: Where does AcqRel fit in to this?
         if (choice.level == Ordering::Release || choice.level == Ordering::SeqCst)
             && (level == Ordering::SeqCst || level == Ordering::Acquire)
         {

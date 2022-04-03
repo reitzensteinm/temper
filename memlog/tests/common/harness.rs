@@ -25,6 +25,13 @@ impl Value {
         while self.thread_state.lock().unwrap().waiting {}
     }
 
+    #[allow(unused)]
+    pub fn exchange_weak(&mut self, old: usize, new: usize, ordering: Ordering) -> bool {
+        self.wait();
+        let mut mem = self.memory.lock().unwrap();
+        mem.exchange(self.thread, self.addr, old, new, ordering)
+    }
+
     pub fn load(&mut self, ordering: Ordering) -> usize {
         self.wait();
         let mut mem = self.memory.lock().unwrap();
