@@ -41,6 +41,7 @@ impl Value {
 pub struct Environment {
     pub a: Value,
     pub b: Value,
+    pub c: Value,
 }
 
 #[derive(Default)]
@@ -80,6 +81,12 @@ impl<T: Copy + Send + 'static> LogTest<T> {
                 b: Value {
                     thread: i,
                     addr: 1,
+                    thread_state: ts.clone(),
+                    memory: ms.clone(),
+                },
+                c: Value {
+                    thread: i,
+                    addr: 2,
                     thread_state: ts.clone(),
                     memory: ms.clone(),
                 },
