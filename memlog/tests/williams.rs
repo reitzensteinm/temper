@@ -211,8 +211,6 @@ fn test_5_9() {
     assert!(run_until(inner, vec![vec![0, 0, 1]]));
 }
 
-// Todo: Figure out AcqRel semantics for CAS
-
 // Listing 5.10
 // Here, we decide to be more strict than the model described in the book. This is in line with
 // the Temper design philosophy, where the models can be more strict than those they emulate
