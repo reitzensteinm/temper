@@ -37,12 +37,15 @@ pub struct MemoryOperation {
     pub level: Ordering,
     pub op: OperationType,
     pub source_sequence: MemorySequence,
+    pub source_fence_sequence: MemorySequence,
 }
 
 #[derive(Default)]
 pub struct ThreadView {
     pub sequence: usize,
     pub mem_sequence: MemorySequence,
+    pub fence_sequence: MemorySequence,
+    pub read_fence_sequence: MemorySequence,
 }
 
 pub struct MemorySystem {
@@ -94,39 +97,19 @@ impl MemorySystem {
             level == Ordering::Acquire || level == Ordering::Release || level == Ordering::SeqCst
         );
 
-        let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
-        let mut rng = ChaCha8Rng::seed_from_u64(s);
         let view = &mut self.threads[thread];
 
         if level == Ordering::SeqCst {
             view.mem_sequence.synchronize(&self.seq_cst_sequence);
             self.seq_cst_sequence.synchronize(&view.mem_sequence);
-        } else if level == Ordering::Release {
-            self.global_sequence += 1;
-            view.sequence += 1;
+        }
 
-            self.log.push(MemoryOperation {
-                thread,
-                thread_sequence: view.sequence,
-                global_sequence: self.global_sequence,
-                level,
-                source_sequence: view.mem_sequence.clone(),
-                op: OperationType::Fence,
-            });
-        } else if level == Ordering::Acquire {
-            let possible: Vec<&MemoryOperation> = self
-                .log
-                .iter()
-                .filter(|mo| match mo.op {
-                    // Todo: Is the global sequence the only correct here?
-                    OperationType::Store(_, _) => false,
-                    OperationType::Fence => true,
-                })
-                .collect();
+        if level == Ordering::Release || level == Ordering::SeqCst {
+            view.fence_sequence = view.mem_sequence.clone();
+        }
 
-            let choice = possible[(rng.next_u32() as usize) % possible.len()];
-
-            view.mem_sequence.synchronize(&choice.source_sequence);
+        if level == Ordering::Acquire {
+            view.mem_sequence.synchronize(&view.read_fence_sequence);
         }
     }
 
@@ -151,6 +134,7 @@ impl MemorySystem {
             thread,
             thread_sequence: view.sequence,
             global_sequence: self.global_sequence,
+            source_fence_sequence: view.fence_sequence.clone(),
             level,
             source_sequence: view.mem_sequence.clone(),
             op: OperationType::Store(addr, val),
@@ -200,6 +184,9 @@ impl MemorySystem {
             view.mem_sequence.synchronize(&choice.source_sequence);
         }
 
+        view.read_fence_sequence
+            .synchronize(&choice.source_fence_sequence);
+
         match choice.op {
             OperationType::Store(loc, val) => {
                 view.mem_sequence
@@ -227,6 +214,7 @@ impl Default for MemorySystem {
                 level: Ordering::Relaxed,
                 op: OperationType::Store(i, 0),
                 source_sequence: Default::default(),
+                source_fence_sequence: Default::default(),
             })
         }
 

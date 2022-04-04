@@ -249,14 +249,14 @@ fn test_5_11() {
     ));
 }
 
+// Listing 5.12
+// Tests release and acquire fences
 #[test]
 fn test_5_12() {
     fn inner() -> Vec<usize> {
         let mut lt = LogTest::default();
 
         lt.add(|mut eg: Environment| {
-            // Todo: This doesn't work!
-            eg.fence(Ordering::Release);
             eg.a.store(1, Ordering::Relaxed);
             eg.fence(Ordering::Release);
             eg.b.store(1, Ordering::Relaxed);
@@ -274,3 +274,29 @@ fn test_5_12() {
 
     assert!(run_until(inner, vec![vec![0, 1]]));
 }
+
+#[test]
+fn test_5_12_seq() {
+    fn inner() -> Vec<usize> {
+        let mut lt = LogTest::default();
+
+        lt.add(|mut eg: Environment| {
+            eg.a.store(1, Ordering::Relaxed);
+            eg.fence(Ordering::SeqCst);
+            eg.b.store(1, Ordering::Relaxed);
+            0
+        });
+
+        lt.add(|mut eg: Environment| {
+            while eg.b.load(Ordering::Relaxed) == 0 {}
+            eg.fence(Ordering::SeqCst);
+            eg.a.load(Ordering::Relaxed)
+        });
+
+        lt.run()
+    }
+
+    assert!(run_until(inner, vec![vec![0, 1]]));
+}
+
+// 5.13
