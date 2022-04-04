@@ -37,12 +37,15 @@ pub struct MemoryOperation {
     pub level: Ordering,
     pub op: OperationType,
     pub source_sequence: MemorySequence,
+    pub source_fence_sequence: MemorySequence,
 }
 
 #[derive(Default)]
 pub struct ThreadView {
     pub sequence: usize,
     pub mem_sequence: MemorySequence,
+    pub fence_sequence: MemorySequence,
+    pub read_fence_sequence: MemorySequence,
 }
 
 pub struct MemorySystem {
@@ -89,6 +92,27 @@ impl MemorySystem {
         }
     }
 
+    pub fn fence(&mut self, thread: usize, level: Ordering) {
+        assert!(
+            level == Ordering::Acquire || level == Ordering::Release || level == Ordering::SeqCst
+        );
+
+        let view = &mut self.threads[thread];
+
+        if level == Ordering::SeqCst {
+            view.mem_sequence.synchronize(&self.seq_cst_sequence);
+            self.seq_cst_sequence.synchronize(&view.mem_sequence);
+        }
+
+        if level == Ordering::Release || level == Ordering::SeqCst {
+            view.fence_sequence = view.mem_sequence.clone();
+        }
+
+        if level == Ordering::Acquire {
+            view.mem_sequence.synchronize(&view.read_fence_sequence);
+        }
+    }
+
     pub fn store(&mut self, thread: usize, addr: usize, val: usize, level: Ordering) {
         assert!(
             level == Ordering::Relaxed || level == Ordering::Release || level == Ordering::SeqCst
@@ -110,6 +134,7 @@ impl MemorySystem {
             thread,
             thread_sequence: view.sequence,
             global_sequence: self.global_sequence,
+            source_fence_sequence: view.fence_sequence.clone(),
             level,
             source_sequence: view.mem_sequence.clone(),
             op: OperationType::Store(addr, val),
@@ -159,6 +184,9 @@ impl MemorySystem {
             view.mem_sequence.synchronize(&choice.source_sequence);
         }
 
+        view.read_fence_sequence
+            .synchronize(&choice.source_fence_sequence);
+
         match choice.op {
             OperationType::Store(loc, val) => {
                 view.mem_sequence
@@ -186,6 +214,7 @@ impl Default for MemorySystem {
                 level: Ordering::Relaxed,
                 op: OperationType::Store(i, 0),
                 source_sequence: Default::default(),
+                source_fence_sequence: Default::default(),
             })
         }
 

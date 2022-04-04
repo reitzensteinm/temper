@@ -51,6 +51,16 @@ pub struct Environment {
     pub c: Value,
 }
 
+impl Environment {
+    #[allow(unused)]
+    pub fn fence(&mut self, ordering: Ordering) {
+        // Todo: This is gross!
+        self.a.wait();
+        let mut mem = self.a.memory.lock().unwrap();
+        mem.fence(self.a.thread, ordering)
+    }
+}
+
 #[derive(Default)]
 pub struct LogTest<T: Copy + Send + 'static> {
     pub fns: Vec<Box<dyn FnMut(Environment) -> T + Send>>,
