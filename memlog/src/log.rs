@@ -89,6 +89,47 @@ impl MemorySystem {
         }
     }
 
+    pub fn fence(&mut self, thread: usize, level: Ordering) {
+        assert!(
+            level == Ordering::Acquire || level == Ordering::Release || level == Ordering::SeqCst
+        );
+
+        let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
+        let mut rng = ChaCha8Rng::seed_from_u64(s);
+        let view = &mut self.threads[thread];
+
+        if level == Ordering::SeqCst {
+            view.mem_sequence.synchronize(&self.seq_cst_sequence);
+            self.seq_cst_sequence.synchronize(&view.mem_sequence);
+        } else if level == Ordering::Release {
+            self.global_sequence += 1;
+            view.sequence += 1;
+
+            self.log.push(MemoryOperation {
+                thread,
+                thread_sequence: view.sequence,
+                global_sequence: self.global_sequence,
+                level,
+                source_sequence: view.mem_sequence.clone(),
+                op: OperationType::Fence,
+            });
+        } else if level == Ordering::Acquire {
+            let possible: Vec<&MemoryOperation> = self
+                .log
+                .iter()
+                .filter(|mo| match mo.op {
+                    // Todo: Is the global sequence the only correct here?
+                    OperationType::Store(_, _) => false,
+                    OperationType::Fence => true,
+                })
+                .collect();
+
+            let choice = possible[(rng.next_u32() as usize) % possible.len()];
+
+            view.mem_sequence.synchronize(&choice.source_sequence);
+        }
+    }
+
     pub fn store(&mut self, thread: usize, addr: usize, val: usize, level: Ordering) {
         assert!(
             level == Ordering::Relaxed || level == Ordering::Release || level == Ordering::SeqCst

@@ -211,13 +211,15 @@ fn test_5_9() {
     assert!(run_until(inner, vec![vec![0, 0, 1]]));
 }
 
-// Listing 5.10
+// Listing 5.10 pertains to consume memory order, and is skipped
+
+// Listing 5.11
 // Here, we decide to be more strict than the model described in the book. This is in line with
 // the Temper design philosophy, where the models can be more strict than those they emulate
 // A Relaxed exchange_weak in Thread 2 can break the happens before relationship between
 // Thread 1 and Thread 3, even though it should be a NOP unless Thread 1 happens before Thread 2
 #[test]
-fn test_5_10() {
+fn test_5_11() {
     fn inner(exchange_order: Ordering) -> Vec<usize> {
         let mut lt = LogTest::default();
 
@@ -245,4 +247,30 @@ fn test_5_10() {
         || inner(Ordering::Relaxed),
         vec![vec![0, 0, 0], vec![0, 0, 1]]
     ));
+}
+
+#[test]
+fn test_5_12() {
+    fn inner() -> Vec<usize> {
+        let mut lt = LogTest::default();
+
+        lt.add(|mut eg: Environment| {
+            // Todo: This doesn't work!
+            eg.fence(Ordering::Release);
+            eg.a.store(1, Ordering::Relaxed);
+            eg.fence(Ordering::Release);
+            eg.b.store(1, Ordering::Relaxed);
+            0
+        });
+
+        lt.add(|mut eg: Environment| {
+            while eg.b.load(Ordering::Relaxed) == 0 {}
+            eg.fence(Ordering::Acquire);
+            eg.a.load(Ordering::Relaxed)
+        });
+
+        lt.run()
+    }
+
+    assert!(run_until(inner, vec![vec![0, 1]]));
 }
