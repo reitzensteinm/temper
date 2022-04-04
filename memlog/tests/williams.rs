@@ -301,4 +301,6 @@ fn test_5_12_seq() {
     assert!(run_until(inner, vec![vec![0, 1]]));
 }
 
-// 5.13
+// Listing 5.13 pertains to non atomics, and so isn't included here.
+// Memlog doesn't draw a distinction between non atomics and relaxed access.
+// Temper deals with this at a higher level.
