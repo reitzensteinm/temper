@@ -275,6 +275,8 @@ fn test_5_12() {
     assert!(run_until(inner, vec![vec![0, 1]]));
 }
 
+// Listing 5.12 adapted
+// Tests sequentially consistent fences
 #[test]
 fn test_5_12_seq() {
     fn inner() -> Vec<usize> {
