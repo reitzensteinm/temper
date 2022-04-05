@@ -41,6 +41,7 @@ mod test {
                 prog.store(1, Ordering::SeqCst);
                 sw.wait();
                 prog.store(2, Ordering::SeqCst);
+                sw.wait();
             });
         };
 
@@ -52,5 +53,6 @@ mod test {
         sw.signal();
         std::thread::sleep(std::time::Duration::from_millis(20));
         assert_eq!(prog.load(Ordering::SeqCst), 2);
+        sw.signal();
     }
 }
