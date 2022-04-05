@@ -1,11 +1,13 @@
 use std::sync::{Condvar, Mutex};
 
 #[derive(Default)]
+#[allow(clippy::mutex_atomic)]
 pub struct SleepWait {
     ready: Mutex<bool>,
     signal: Condvar,
 }
 
+#[allow(clippy::mutex_atomic)]
 impl SleepWait {
     pub fn signal(&self) {
         *self.ready.lock().unwrap() = true;
@@ -15,9 +17,7 @@ impl SleepWait {
         let mut ready = self.ready.lock().unwrap();
 
         while !*ready {
-            println!("waiting");
             ready = self.signal.wait(ready).unwrap();
-            println!("Done");
         }
     }
 }
