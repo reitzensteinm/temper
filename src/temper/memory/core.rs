@@ -1,4 +1,5 @@
 use crate::temper::system::core::{with_system, Op, Operation};
+use crate::temper::utils::sleepwait::SleepWait;
 use std::any::Any;
 use std::cell::UnsafeCell;
 use std::ops::Deref;
@@ -84,6 +85,7 @@ impl MemoryOp {
 pub struct PendingResult<T: Copy> {
     result: Arc<Mutex<Option<T>>>,
     value: Rc<UnsafeCell<T>>,
+    sleep_wait: Arc<SleepWait>,
 }
 
 pub struct Atomic<T: Copy> {
@@ -121,6 +123,7 @@ impl<T: Copy> Deref for PendingResult<T> {
             // We can't park if the value exists; this will cause race conditions
             if !taken {
                 with_system(|s| s.parked.fetch_add(1, Ordering::SeqCst));
+                self.sleep_wait.wait();
                 taken = true;
             }
         }
@@ -172,17 +175,25 @@ impl<T: Copy + Default + 'static + Send> Atomic<T> {
 
         let vclone = self.value.clone();
         let result = Arc::new(Mutex::new(None));
+        let sleep_wait = Arc::new(SleepWait::default());
 
         {
             let value_slot = result.clone();
+            let sleep_wait = sleep_wait.clone();
+
             Self::queue_op(self.id, op, move || {
                 let v = vclone.lock().unwrap();
 
                 *value_slot.lock().unwrap() = Some(f(v));
+                sleep_wait.signal();
             });
         }
 
-        PendingResult { value, result }
+        PendingResult {
+            value,
+            result,
+            sleep_wait,
+        }
     }
 
     pub fn get(&self) -> PendingResult<T> {

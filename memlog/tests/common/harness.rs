@@ -2,14 +2,14 @@ use memlog::log::MemorySystem;
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 
 pub struct ThreadState {
     pub finished: bool,
     pub waiting: bool,
+    pub barrier: Arc<Barrier>,
     pub position: usize,
-    pub authority: usize,
 }
 
 pub struct Value {
@@ -21,7 +21,14 @@ pub struct Value {
 
 impl Value {
     pub fn wait(&mut self) {
-        self.thread_state.lock().unwrap().waiting = true;
+        {
+            let mut ts = self.thread_state.lock().unwrap();
+            ts.waiting = true;
+            let barrier = ts.barrier.clone();
+            drop(ts);
+            barrier.wait();
+        }
+
         while self.thread_state.lock().unwrap().waiting {}
     }
 
@@ -82,8 +89,8 @@ impl<T: Copy + Send + 'static> LogTest<T> {
             let ts = Arc::new(Mutex::new(ThreadState {
                 finished: false,
                 waiting: false,
+                barrier: Arc::new(Barrier::new(2)),
                 position: 0,
-                authority: 0,
             }));
 
             threads.push(ts.clone());
@@ -139,8 +146,8 @@ impl<T: Copy + Send + 'static> LogTest<T> {
                 let r = &mut threads[ind];
                 let mut l = r.lock().unwrap();
                 if l.waiting {
-                    l.authority += 1;
                     l.waiting = false;
+                    l.barrier.wait();
                 }
             }
         }
