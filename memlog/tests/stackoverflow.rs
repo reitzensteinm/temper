@@ -63,7 +63,8 @@ fn test_exchange() {
     ));
 }
 
-// Same example, but in the comments
+// Same example, but in the comments. One half of the comment appears to be malformed, and the
+// description doesn't match the code. This from the bottom.
 #[test]
 fn test_exchange_fence() {
     fn inner() -> Vec<usize> {
@@ -72,11 +73,14 @@ fn test_exchange_fence() {
         lt.add(|mut eg: Environment| {
             eg.a.store(1, Ordering::Relaxed);
             eg.fence(Ordering::AcqRel);
-            eg.b.load(Ordering::Relaxed)
+            eg.b.store(1, Ordering::Relaxed);
+            0
         });
 
         lt.add(|mut eg: Environment| {
-            eg.b.store(1, Ordering::Relaxed);
+            // By perceiving the store to B, which is sequenced after the fence
+            while eg.b.load(Ordering::Relaxed) == 0 {}
+            // This fence now synchronizes with the release above, and the write to A must be visible
             eg.fence(Ordering::AcqRel);
             eg.a.load(Ordering::Relaxed)
         });
@@ -84,6 +88,5 @@ fn test_exchange_fence() {
         lt.run()
     }
 
-    // The threads do not establish any synchronizes with relationship with each other. All bets are off.
-    assert!(run_until(inner, vec![vec![0, 1], vec![1, 0], vec![1, 1]]));
+    assert!(run_until(inner, vec![vec![0, 1]]));
 }
