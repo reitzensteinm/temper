@@ -132,6 +132,10 @@ impl MemorySystem {
             self.seq_cst_sequence.synchronize(&view.mem_sequence);
         }
 
+        if level == Ordering::SeqCst || level == Ordering::Release {
+            view.fence_sequence = view.mem_sequence.clone();
+        }
+
         //println!("Mem Sequence {:?}", view.mem_sequence);
         self.log.push(MemoryOperation {
             thread,
@@ -185,6 +189,10 @@ impl MemorySystem {
             && (level == Ordering::SeqCst || level == Ordering::Acquire)
         {
             view.mem_sequence.synchronize(&choice.source_sequence);
+        }
+
+        if level == Ordering::Acquire || level == Ordering::SeqCst {
+            view.mem_sequence.synchronize(&choice.source_fence_sequence);
         }
 
         view.read_fence_sequence

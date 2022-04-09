@@ -25,28 +25,40 @@ In this case, all non-atomic and relaxed atomic stores that are sequenced-before
 
 #[test]
 fn test_fence_atomic() {
-    fn inner(use_release: bool) -> Vec<usize> {
+    fn inner(release_chain: bool, fence: bool) -> Vec<usize> {
         let mut lt = LogTest::default();
 
         lt.add(move |mut eg: Environment| {
             eg.a.store(1, Ordering::Relaxed); // Target
-            eg.fence(Ordering::Release); // F Sequenced before X in thread A
 
-            // Note X swaps between C and B here. The synchronizing load can be the X, or a
-            // relaxed store released by X
-            if use_release {
-                // Optionally model release sequence headed by X
+            // Fence behind conditional to ensure when fence is missing, wrong values result
+            if fence {
+                eg.fence(Ordering::Release); // F Sequenced before X in thread A
+            }
+
+            if release_chain {
+                // Atomic store X that would create a release chain to c were it Release
                 eg.b.store(1, Ordering::Relaxed);
-                eg.c.store(1, Ordering::Release); // Atomic store X
             } else {
-                eg.b.store(1, Ordering::Release); // Atomic store X
+                // Atomic store X that writes directly to c
+                eg.c.store(1, Ordering::Relaxed);
+            }
+            0
+        });
+
+        lt.add(move |mut eg: Environment| {
+            if release_chain {
+                // If modelling a release chain, spin on an intermediate flag
+                while eg.b.load(Ordering::Acquire) == 0 {}
+
+                eg.c.store(1, Ordering::Release) // Continue release chain from store X
             }
             0
         });
 
         lt.add(|mut eg: Environment| {
-            // After loop, Y reads value written by X
-            while eg.b.load(Ordering::Relaxed) == 0 {}
+            // After loop, Y reads value written by X, or a value that would be written by the release chain
+            while eg.c.load(Ordering::Acquire) == 0 {}
 
             // This should always see the store
             eg.a.load(Ordering::Relaxed)
@@ -55,8 +67,19 @@ fn test_fence_atomic() {
         lt.run()
     }
 
-    assert!(run_until(|| inner(true), vec![vec![0, 1]]));
-    assert!(run_until(|| inner(false), vec![vec![0, 1]]));
+    // Assert success when fences are present
+    assert!(run_until(|| inner(true, true), vec![vec![0, 0, 1]]));
+    assert!(run_until(|| inner(false, true), vec![vec![0, 0, 1]]));
+
+    // Assert failure when fences are missing
+    assert!(run_until(
+        || inner(true, false),
+        vec![vec![0, 0, 0], vec![0, 0, 1]]
+    ));
+    assert!(run_until(
+        || inner(false, false),
+        vec![vec![0, 0, 0], vec![0, 0, 1]]
+    ));
 }
 
 /*
@@ -73,27 +96,40 @@ In this case, all non-atomic and relaxed atomic stores that are sequenced-before
 
 #[test]
 fn test_atomic_fence() {
-    fn inner(use_release: bool) -> Vec<usize> {
+    fn inner(release_chain: bool, fence: bool) -> Vec<usize> {
         let mut lt = LogTest::default();
 
         lt.add(move |mut eg: Environment| {
             eg.a.store(1, Ordering::Relaxed); // Target
 
-            // Note X swaps between C and B here. The synchronizing load can be the X, or a
-            // relaxed store released by X
-            if use_release {
-                // Optionally model release sequence headed by X
-                eg.b.store(1, Ordering::Relaxed);
-                eg.c.store(1, Ordering::Release); // Atomic store X
+            if release_chain {
+                // Atomic store X that creates a release chain to c
+                eg.b.store(1, Ordering::Release);
             } else {
-                eg.b.store(1, Ordering::Release); // Atomic store X
+                // Atomic store X that writes directly to c
+                eg.c.store(1, Ordering::Release);
             }
             0
         });
 
-        lt.add(|mut eg: Environment| {
-            while eg.b.load(Ordering::Relaxed) == 0 {} // Atomic Read Y
-            eg.fence(Ordering::Acquire); // Fence F
+        lt.add(move |mut eg: Environment| {
+            if release_chain {
+                // If modelling a release chain, spin on an intermediate flag
+                while eg.b.load(Ordering::Acquire) == 0 {}
+
+                eg.c.store(1, Ordering::Release) // Continue release chain from store X
+            }
+            0
+        });
+
+        lt.add(move |mut eg: Environment| {
+            // Y reads value written by X, or a value that would be written by the release chain
+            while eg.c.load(Ordering::Relaxed) == 0 {} // Atomic Read Y
+
+            // Fence behind conditional to ensure when fence is missing, wrong values result
+            if fence {
+                eg.fence(Ordering::Acquire); // Fence F
+            }
 
             // This should always see the store
             eg.a.load(Ordering::Relaxed)
@@ -102,8 +138,19 @@ fn test_atomic_fence() {
         lt.run()
     }
 
-    assert!(run_until(|| inner(true), vec![vec![0, 1]]));
-    assert!(run_until(|| inner(false), vec![vec![0, 1]]));
+    // Assert success when fences are present
+    assert!(run_until(|| inner(true, true), vec![vec![0, 0, 1]]));
+    assert!(run_until(|| inner(false, true), vec![vec![0, 0, 1]]));
+
+    // Assert failure when fences are missing
+    assert!(run_until(
+        || inner(true, false),
+        vec![vec![0, 0, 0], vec![0, 0, 1]]
+    ));
+    assert!(run_until(
+        || inner(false, false),
+        vec![vec![0, 0, 0], vec![0, 0, 1]]
+    ));
 }
 
 /*
@@ -122,28 +169,44 @@ A release fence FA in thread A synchronizes-with an acquire fence FB in thread B
 
 #[test]
 fn test_fence_fence() {
-    fn inner(use_release: bool) -> Vec<usize> {
+    fn inner(release_chain: bool, failure: usize) -> Vec<usize> {
         let mut lt = LogTest::default();
 
         lt.add(move |mut eg: Environment| {
             eg.a.store(1, Ordering::Relaxed); // Target
-            eg.fence(Ordering::Release); // Fence FA
 
-            // Note X swaps between C and B here. The synchronizing load can be the X, or a
-            // relaxed store released by X
-            if use_release {
-                // Optionally model release sequence headed by X
+            // Fence behind conditional to ensure when fence is missing, wrong values result
+            if failure != 1 {
+                eg.fence(Ordering::Release); // Fence FA
+            }
+
+            if release_chain {
+                // Atomic store X that would create a release chain to c were it release
                 eg.b.store(1, Ordering::Relaxed);
-                eg.c.store(1, Ordering::Release); // Atomic store X
             } else {
-                eg.b.store(1, Ordering::Release); // Atomic store X
+                // Atomic store X that writes directly to c
+                eg.c.store(1, Ordering::Relaxed);
             }
             0
         });
 
-        lt.add(|mut eg: Environment| {
-            while eg.b.load(Ordering::Relaxed) == 0 {} // Atomic Read Y
-            eg.fence(Ordering::Acquire); // Fence FB
+        lt.add(move |mut eg: Environment| {
+            if release_chain {
+                // If modelling a release chain, spin on an intermediate flag
+                while eg.b.load(Ordering::Acquire) == 0 {}
+
+                eg.c.store(1, Ordering::Release) // Atomic store X
+            }
+            0
+        });
+
+        lt.add(move |mut eg: Environment| {
+            while eg.c.load(Ordering::Relaxed) == 0 {} // Atomic Read Y
+
+            // Fence behind conditional to ensure when fence is missing, wrong values result
+            if failure != 2 {
+                eg.fence(Ordering::Acquire); // Fence FB
+            }
 
             // This should always see the store
             eg.a.load(Ordering::Relaxed)
@@ -152,6 +215,134 @@ fn test_fence_fence() {
         lt.run()
     }
 
-    assert!(run_until(|| inner(true), vec![vec![0, 1]]));
-    assert!(run_until(|| inner(false), vec![vec![0, 1]]));
+    // Assert success when fences are present
+    assert!(run_until(|| inner(true, 0), vec![vec![0, 0, 1]]));
+    assert!(run_until(|| inner(false, 0), vec![vec![0, 0, 1]]));
+
+    // Assert failure when first fence is missing
+    assert!(run_until(
+        || inner(true, 1),
+        vec![vec![0, 0, 0], vec![0, 0, 1]]
+    ));
+    assert!(run_until(
+        || inner(false, 1),
+        vec![vec![0, 0, 0], vec![0, 0, 1]]
+    ));
+
+    // Assert failure when first second fence is missing
+    assert!(run_until(
+        || inner(true, 2),
+        vec![vec![0, 0, 0], vec![0, 0, 1]]
+    ));
+    assert!(run_until(
+        || inner(false, 2),
+        vec![vec![0, 0, 0], vec![0, 0, 1]]
+    ));
+}
+
+/*
+Example under "Notes"
+
+Test ensures that, after seeing the write to C, the second thread can use an Acquire fence to
+synchronize with the release fence and see all of the first thread's prior stores
+*/
+#[test]
+fn test_fence_fence_example_a() {
+    fn inner(failure: usize) -> Vec<usize> {
+        let mut lt = LogTest::default();
+
+        lt.add(move |mut eg: Environment| {
+            eg.a.store(1, Ordering::Relaxed); // Relaxed write a
+            eg.b.store(1, Ordering::Relaxed); // Relaxed write b
+
+            // Fence behind conditional to ensure when fence is missing, wrong values result
+            if failure != 1 {
+                eg.fence(Ordering::Release);
+            }
+            eg.c.store(1, Ordering::Relaxed); // Target
+            0
+        });
+
+        lt.add(move |mut eg: Environment| {
+            if eg.c.load(Ordering::Relaxed) == 1 {
+                // Fence behind conditional to ensure when fence is missing, wrong values result
+                if failure != 2 {
+                    eg.fence(Ordering::Acquire);
+                }
+                // After a fence, we must see writes to a and b
+                eg.a.load(Ordering::Relaxed) + eg.b.load(Ordering::Relaxed)
+            } else {
+                0
+            }
+        });
+
+        lt.run()
+    }
+
+    // When fences are present, if thread two perceives the write to c, it should see both a & b
+    assert!(run_until(|| inner(0), vec![vec![0, 0], vec![0, 2]]));
+    // Without first fence, all bets are off
+    assert!(run_until(
+        || inner(1),
+        vec![vec![0, 0], vec![0, 1], vec![0, 2]]
+    ));
+    // Without second fence, all bets are off
+    assert!(run_until(
+        || inner(2),
+        vec![vec![0, 0], vec![0, 1], vec![0, 2]]
+    ));
+}
+
+#[test]
+fn test_fence_fence_example_b() {
+    fn inner(failure: usize) -> Vec<usize> {
+        let mut lt = LogTest::default();
+
+        lt.add(move |mut eg: Environment| {
+            // Transaction 1
+            // Write data to a, bump write pointer c
+            eg.a.store(1, Ordering::Relaxed);
+            eg.c.store(1, Ordering::Release);
+
+            // Transaction 2
+            // Write data to b, bump write pointer c
+            eg.b.store(1, Ordering::Relaxed);
+            eg.c.store(2, Ordering::Release);
+            0
+        });
+
+        lt.add(move |mut eg: Environment| {
+            // Wait for write pointer to indicate Transaction 1 ready
+            while eg.c.load(Ordering::Relaxed) < 1 {}
+
+            // Fence behind conditional to ensure when fence is missing, wrong values result
+            if failure != 1 {
+                eg.fence(Ordering::Acquire);
+            }
+
+            eg.a.load(Ordering::Relaxed)
+        });
+
+        lt.add(move |mut eg: Environment| {
+            // Wait for write pointer to indicate Transaction 2 ready
+            while eg.c.load(Ordering::Relaxed) < 2 {}
+
+            // Fence behind conditional to ensure when fence is missing, wrong values result
+            if failure != 2 {
+                eg.fence(Ordering::Acquire);
+            }
+
+            eg.a.load(Ordering::Relaxed)
+        });
+
+        lt.run()
+    }
+
+    // When fences are present, if thread two perceives the write to c, it should see both a & b
+    assert!(run_until(|| inner(0), vec![vec![0, 1, 1]]));
+
+    // Drop fence from first reader. It is now not guaranteed to perceive the store to a
+    assert!(run_until(|| inner(1), vec![vec![0, 0, 1], vec![0, 1, 1]]));
+    // Drop fence from second reader. It is now not guaranteed to perceive the store to b
+    assert!(run_until(|| inner(2), vec![vec![0, 1, 0], vec![0, 1, 1]]));
 }
