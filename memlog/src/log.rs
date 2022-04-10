@@ -94,7 +94,10 @@ impl MemorySystem {
 
     pub fn fence(&mut self, thread: usize, level: Ordering) {
         assert!(
-            level == Ordering::Acquire || level == Ordering::Release || level == Ordering::SeqCst
+            level == Ordering::Acquire
+                || level == Ordering::Release
+                || level == Ordering::SeqCst
+                || level == Ordering::AcqRel
         );
 
         let view = &mut self.threads[thread];
@@ -104,11 +107,11 @@ impl MemorySystem {
             self.seq_cst_sequence.synchronize(&view.mem_sequence);
         }
 
-        if level == Ordering::Release || level == Ordering::SeqCst {
+        if level == Ordering::Release || level == Ordering::SeqCst || level == Ordering::AcqRel {
             view.fence_sequence = view.mem_sequence.clone();
         }
 
-        if level == Ordering::Acquire {
+        if level == Ordering::Acquire || level == Ordering::AcqRel {
             view.mem_sequence.synchronize(&view.read_fence_sequence);
         }
     }
@@ -127,6 +130,10 @@ impl MemorySystem {
 
         if level == Ordering::SeqCst {
             self.seq_cst_sequence.synchronize(&view.mem_sequence);
+        }
+
+        if level == Ordering::SeqCst || level == Ordering::Release {
+            view.fence_sequence = view.mem_sequence.clone();
         }
 
         //println!("Mem Sequence {:?}", view.mem_sequence);
@@ -182,6 +189,10 @@ impl MemorySystem {
             && (level == Ordering::SeqCst || level == Ordering::Acquire)
         {
             view.mem_sequence.synchronize(&choice.source_sequence);
+        }
+
+        if level == Ordering::Acquire || level == Ordering::SeqCst {
+            view.mem_sequence.synchronize(&choice.source_fence_sequence);
         }
 
         view.read_fence_sequence

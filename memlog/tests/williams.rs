@@ -218,6 +218,9 @@ fn test_5_9() {
 // the Temper design philosophy, where the models can be more strict than those they emulate
 // A Relaxed exchange_weak in Thread 2 can break the happens before relationship between
 // Thread 1 and Thread 3, even though it should be a NOP unless Thread 1 happens before Thread 2
+// Todo: This is wrong (in the standard) https://en.cppreference.com/w/cpp/atomic/memory_order
+// Release / Acquire ordering
+// and RMWs (with any ordering) following a release form a release sequence
 #[test]
 fn test_5_11() {
     fn inner(exchange_order: Ordering) -> Vec<usize> {

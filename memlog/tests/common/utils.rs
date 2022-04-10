@@ -19,7 +19,7 @@ pub fn run_until<T: Clone + Eq + Hash + Debug, F: FnMut() -> T>(
     for x in 0..10_000 {
         res.insert(f());
 
-        if check_set(&res, &expected) && x > 100 {
+        if check_set(&res, &expected) && x > 500 {
             return true;
         }
 
