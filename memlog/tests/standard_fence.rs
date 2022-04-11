@@ -4,10 +4,6 @@ use std::sync::atomic::Ordering;
 
 mod common;
 
-// Todo: Tests derived on the C++ standard
-// https://en.cppreference.com/w/cpp/atomic/atomic_thread_fence
-// https://en.cppreference.com/w/cpp/atomic/memory_order
-
 // https://en.cppreference.com/w/cpp/atomic/atomic_thread_fence
 // Fence-atomic synchronization
 

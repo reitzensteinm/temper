@@ -1,5 +1,9 @@
 # Temper.rs
 
+### Memlog
+
+* Threads cannot send information forward in time
+
 ### Sprints
 
 **Queue Sprint**
