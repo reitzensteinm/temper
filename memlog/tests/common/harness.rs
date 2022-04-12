@@ -36,14 +36,14 @@ impl Value {
     pub fn fetch_modify<F: Fn(usize) -> usize>(&mut self, f: F, ordering: Ordering) {
         self.wait();
         let mut mem = self.memory.lock().unwrap();
-        mem.fetch_modify(self.thread, self.addr, f, ordering)
+        mem.fetch_modify_old(self.thread, self.addr, f, ordering)
     }
 
     #[allow(unused)]
     pub fn exchange_weak(&mut self, old: usize, new: usize, ordering: Ordering) -> bool {
         self.wait();
         let mut mem = self.memory.lock().unwrap();
-        mem.exchange(self.thread, self.addr, old, new, ordering)
+        mem.exchange_old(self.thread, self.addr, old, new, ordering)
     }
 
     pub fn load(&mut self, ordering: Ordering) -> usize {

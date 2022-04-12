@@ -3,13 +3,6 @@ use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
-#[derive(Debug)]
-pub enum OperationType {
-    Store(usize, usize),
-    //Load(usize, usize),
-    Fence,
-}
-
 #[derive(Default, Debug, Clone)]
 pub struct MemorySequence {
     pub sequence: HashMap<usize, usize>,
@@ -35,7 +28,8 @@ pub struct MemoryOperation {
     pub thread_sequence: usize,
     pub global_sequence: usize,
     pub level: Ordering,
-    pub op: OperationType,
+    pub address: usize,
+    pub value: usize,
     pub source_sequence: MemorySequence,
     pub source_fence_sequence: MemorySequence,
 }
@@ -57,7 +51,17 @@ pub struct MemorySystem {
 }
 
 impl MemorySystem {
-    pub fn fetch_modify<F: Fn(usize) -> usize>(
+    /*
+    pub fn fetch_update<F: Fn(usize) -> Option<usize>>(
+        &mut self,
+        thread: usize,
+        addr: usize,
+        f: F,
+        level: Ordering,
+    ) -> Result<usize, usize> {
+    }*/
+
+    pub fn fetch_modify_old<F: Fn(usize) -> usize>(
         &mut self,
         thread: usize,
         addr: usize,
@@ -86,7 +90,7 @@ impl MemorySystem {
         self.store(thread, addr, f(v), store_ordering);
     }
 
-    pub fn exchange(
+    pub fn exchange_old(
         &mut self,
         thread: usize,
         addr: usize,
@@ -173,7 +177,8 @@ impl MemorySystem {
             source_fence_sequence: view.fence_sequence.clone(),
             level,
             source_sequence: view.mem_sequence.clone(),
-            op: OperationType::Store(addr, val),
+            address: addr,
+            value: val,
         });
     }
 
@@ -188,21 +193,12 @@ impl MemorySystem {
 
         let all_ops = std::iter::once(&self.acc[addr]).chain(self.log.iter());
 
-        let possible: Vec<&MemoryOperation> = all_ops
-            .filter(|mo| match mo.op {
-                // Todo: Is the global sequence the only correct here?
-                OperationType::Store(a, _) => a == addr,
-                OperationType::Fence => false,
-            })
-            .collect();
+        let possible: Vec<&MemoryOperation> = all_ops.filter(|mo| mo.address == addr).collect();
 
         let first_ind = possible
             .iter()
-            .position(|mo| match mo.op {
-                OperationType::Store(a, _) => {
-                    mo.global_sequence >= *view.mem_sequence.sequence.get(&a).unwrap_or(&0_usize)
-                }
-                OperationType::Fence => false,
+            .position(|mo| {
+                mo.global_sequence >= *view.mem_sequence.sequence.get(&addr).unwrap_or(&0_usize)
             })
             .unwrap_or(0_usize);
 
@@ -227,17 +223,11 @@ impl MemorySystem {
         view.read_fence_sequence
             .synchronize(&choice.source_fence_sequence);
 
-        match choice.op {
-            OperationType::Store(loc, val) => {
-                view.mem_sequence
-                    .sequence
-                    .insert(loc, choice.global_sequence);
-                val
-            }
-            OperationType::Fence => {
-                todo!()
-            }
-        }
+        view.mem_sequence
+            .sequence
+            .insert(choice.address, choice.global_sequence);
+
+        choice.value
     }
 }
 
@@ -252,7 +242,8 @@ impl Default for MemorySystem {
                 thread_sequence: 0,
                 global_sequence: 0,
                 level: Ordering::Relaxed,
-                op: OperationType::Store(i, 0),
+                address: i,
+                value: 0,
                 source_sequence: Default::default(),
                 source_fence_sequence: Default::default(),
             })
