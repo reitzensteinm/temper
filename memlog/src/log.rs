@@ -51,7 +51,6 @@ pub struct MemorySystem {
 }
 
 impl MemorySystem {
-    /*
     pub fn fetch_update<F: Fn(usize) -> Option<usize>>(
         &mut self,
         thread: usize,
@@ -59,7 +58,49 @@ impl MemorySystem {
         f: F,
         level: Ordering,
     ) -> Result<usize, usize> {
-    }*/
+        let view = &mut self.threads[thread];
+
+        let all_ops = std::iter::once(&self.acc[addr]).chain(self.log.iter());
+
+        let choice: &MemoryOperation = all_ops.filter(|mo| mo.address == addr).last().unwrap();
+
+        let (load_ordering, store_ordering) = if level == Ordering::AcqRel {
+            (Ordering::Acquire, Ordering::Release)
+        } else {
+            (level, level)
+        };
+
+        Self::read_synchronize(view, choice, &self.seq_cst_sequence, load_ordering);
+
+        let v = choice.value;
+        let res = f(v);
+
+        // Todo: Tests for load/Store ordering
+        Self::write_synchronize(
+            view,
+            &mut self.seq_cst_sequence,
+            &mut self.global_sequence,
+            addr,
+            store_ordering,
+        );
+
+        // Todo: If this is relaxed, inherit source fence sequence. Otherwise self sequence
+        // Todo: What if original store isn't release? Think this through
+        // Todo: Do we use store ordering here?
+        // Todo: What on earth is going on
+        self.log.push(MemoryOperation {
+            thread,
+            thread_sequence: view.sequence,
+            global_sequence: self.global_sequence,
+            source_fence_sequence: view.fence_sequence.clone(),
+            level,
+            source_sequence: view.mem_sequence.clone(),
+            address: addr,
+            value: res.unwrap(),
+        });
+
+        todo!()
+    }
 
     pub fn fetch_modify_old<F: Fn(usize) -> usize>(
         &mut self,
@@ -154,22 +195,16 @@ impl MemorySystem {
             level == Ordering::Relaxed || level == Ordering::Release || level == Ordering::SeqCst
         );
 
-        self.global_sequence += 1;
         let view = &mut self.threads[thread];
-        view.sequence += 1;
-        view.mem_sequence
-            .sequence
-            .insert(addr, self.global_sequence);
 
-        if level == Ordering::SeqCst {
-            self.seq_cst_sequence.synchronize(&view.mem_sequence);
-        }
+        Self::write_synchronize(
+            view,
+            &mut self.seq_cst_sequence,
+            &mut self.global_sequence,
+            addr,
+            level,
+        );
 
-        if level == Ordering::SeqCst || level == Ordering::Release {
-            view.fence_sequence = view.mem_sequence.clone();
-        }
-
-        //println!("Mem Sequence {:?}", view.mem_sequence);
         self.log.push(MemoryOperation {
             thread,
             thread_sequence: view.sequence,
@@ -180,6 +215,54 @@ impl MemorySystem {
             address: addr,
             value: val,
         });
+    }
+
+    fn write_synchronize(
+        view: &mut ThreadView,
+        seq_cst_sequence: &mut MemorySequence,
+        global_sequence: &mut usize,
+        addr: usize,
+        level: Ordering,
+    ) {
+        *global_sequence += 1;
+        view.sequence += 1;
+        view.mem_sequence.sequence.insert(addr, *global_sequence);
+
+        if level == Ordering::SeqCst {
+            seq_cst_sequence.synchronize(&view.mem_sequence);
+        }
+
+        if level == Ordering::SeqCst || level == Ordering::Release {
+            view.fence_sequence = view.mem_sequence.clone();
+        }
+    }
+
+    fn read_synchronize(
+        view: &mut ThreadView,
+        choice: &MemoryOperation,
+        seq_cst_sequence: &MemorySequence,
+        level: Ordering,
+    ) {
+        if level == Ordering::SeqCst {
+            view.mem_sequence.synchronize(seq_cst_sequence);
+        }
+
+        if (choice.level == Ordering::Release || choice.level == Ordering::SeqCst)
+            && (level == Ordering::SeqCst || level == Ordering::Acquire)
+        {
+            view.mem_sequence.synchronize(&choice.source_sequence);
+        }
+
+        if level == Ordering::Acquire || level == Ordering::SeqCst {
+            view.mem_sequence.synchronize(&choice.source_fence_sequence);
+        }
+
+        view.read_fence_sequence
+            .synchronize(&choice.source_fence_sequence);
+
+        view.mem_sequence
+            .sequence
+            .insert(choice.address, choice.global_sequence);
     }
 
     pub fn load(&mut self, thread: usize, addr: usize, level: Ordering) -> usize {
@@ -206,26 +289,7 @@ impl MemorySystem {
 
         let choice = possible[(rng.next_u32() as usize) % possible.len()];
 
-        if level == Ordering::SeqCst {
-            view.mem_sequence.synchronize(&self.seq_cst_sequence);
-        }
-
-        if (choice.level == Ordering::Release || choice.level == Ordering::SeqCst)
-            && (level == Ordering::SeqCst || level == Ordering::Acquire)
-        {
-            view.mem_sequence.synchronize(&choice.source_sequence);
-        }
-
-        if level == Ordering::Acquire || level == Ordering::SeqCst {
-            view.mem_sequence.synchronize(&choice.source_fence_sequence);
-        }
-
-        view.read_fence_sequence
-            .synchronize(&choice.source_fence_sequence);
-
-        view.mem_sequence
-            .sequence
-            .insert(choice.address, choice.global_sequence);
+        Self::read_synchronize(view, choice, &self.seq_cst_sequence, level);
 
         choice.value
     }
