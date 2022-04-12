@@ -57,6 +57,35 @@ pub struct MemorySystem {
 }
 
 impl MemorySystem {
+    pub fn fetch_modify<F: Fn(usize) -> usize>(
+        &mut self,
+        thread: usize,
+        addr: usize,
+        f: F,
+        level: Ordering,
+    ) {
+        assert!(
+            level == Ordering::Relaxed || level == Ordering::AcqRel || level == Ordering::SeqCst
+        );
+
+        let view = &mut self.threads[thread];
+
+        // fetch_modify always gets the latest
+        view.mem_sequence
+            .sequence
+            .insert(addr, self.global_sequence);
+
+        let (load_ordering, store_ordering) = if level == Ordering::AcqRel {
+            (Ordering::Acquire, Ordering::Release)
+        } else {
+            (level, level)
+        };
+
+        let v = self.load(thread, addr, load_ordering);
+
+        self.store(thread, addr, f(v), store_ordering);
+    }
+
     pub fn exchange(
         &mut self,
         thread: usize,

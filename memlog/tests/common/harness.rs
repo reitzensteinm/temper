@@ -33,6 +33,13 @@ impl Value {
     }
 
     #[allow(unused)]
+    pub fn fetch_modify<F: Fn(usize) -> usize>(&mut self, f: F, ordering: Ordering) {
+        self.wait();
+        let mut mem = self.memory.lock().unwrap();
+        mem.fetch_modify(self.thread, self.addr, f, ordering)
+    }
+
+    #[allow(unused)]
     pub fn exchange_weak(&mut self, old: usize, new: usize, ordering: Ordering) -> bool {
         self.wait();
         let mut mem = self.memory.lock().unwrap();
