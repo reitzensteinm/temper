@@ -68,14 +68,14 @@ fn explanation_relaxed_increment() {
 
     lt.add(move |mut eg: Environment| {
         for _ in 0..50 {
-            eg.a.fetch_modify(|v| v + 1, Ordering::Relaxed);
+            eg.a.fetch_update(|v| Some(v + 1), Ordering::Relaxed);
         }
         eg.a.load(Ordering::Relaxed)
     });
 
     lt.add(move |mut eg: Environment| {
         for _ in 0..50 {
-            eg.a.fetch_modify(|v| v + 1, Ordering::Relaxed);
+            eg.a.fetch_update(|v| Some(v + 1), Ordering::Relaxed);
         }
         eg.a.load(Ordering::Relaxed)
     });

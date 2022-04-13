@@ -33,10 +33,15 @@ impl Value {
     }
 
     #[allow(unused)]
-    pub fn fetch_modify<F: Fn(usize) -> usize>(&mut self, f: F, ordering: Ordering) {
+    pub fn fetch_update<F: Fn(usize) -> Option<usize>>(
+        &mut self,
+        f: F,
+        ordering: Ordering,
+    ) -> bool {
         self.wait();
         let mut mem = self.memory.lock().unwrap();
-        mem.fetch_modify_old(self.thread, self.addr, f, ordering)
+        mem.fetch_update(self.thread, self.addr, f, ordering)
+            .is_ok()
     }
 
     #[allow(unused)]
