@@ -75,6 +75,10 @@ impl MemorySystem {
         let v = choice.value;
         let res = f(v);
 
+        if res.is_none() {
+            return Err(v);
+        }
+
         // Todo: Tests for load/Store ordering
         Self::write_synchronize(
             view,
@@ -84,22 +88,51 @@ impl MemorySystem {
             store_ordering,
         );
 
-        // Todo: If this is relaxed, inherit source fence sequence. Otherwise self sequence
-        // Todo: What if original store isn't release? Think this through
-        // Todo: Do we use store ordering here?
-        // Todo: What on earth is going on
+        // Todo: Write some great tests to explore these
+        // If previous store is relaxed, normal rules apply
+        // If previous store release or seqcst:
+        // Relaxed: Stores choice's fence and mem sequence
+        // Acquire: Stores choice's fence and mem sequence
+        // Release: Stores choice's fence and mem sequence plus this thread's
+        // AcqRel: Stores choice's fence and mem sequence plus this thread's
+        // SeqCst: Stores choice's fence and mem sequence plus this thread's
+
+        let choice_seqs = (
+            choice.source_sequence.clone(),
+            choice.source_fence_sequence.clone(),
+        );
+        let this_seqs = (view.mem_sequence.clone(), view.fence_sequence.clone());
+        let combined_seqs = {
+            let mut ms = view.mem_sequence.clone();
+            ms.synchronize(&choice.source_sequence);
+            let mut fs = view.fence_sequence.clone();
+            fs.synchronize(&choice.source_fence_sequence);
+            (ms, fs)
+        };
+
+        let seqs = if choice.level == Ordering::Relaxed {
+            this_seqs
+        } else {
+            if level == Ordering::Release || level == Ordering::AcqRel || level == Ordering::SeqCst
+            {
+                combined_seqs
+            } else {
+                choice_seqs
+            }
+        };
+
         self.log.push(MemoryOperation {
             thread,
             thread_sequence: view.sequence,
             global_sequence: self.global_sequence,
-            source_fence_sequence: view.fence_sequence.clone(),
+            source_fence_sequence: seqs.1,
             level,
-            source_sequence: view.mem_sequence.clone(),
+            source_sequence: seqs.0,
             address: addr,
             value: res.unwrap(),
         });
 
-        todo!()
+        Ok(v)
     }
 
     pub fn fetch_modify_old<F: Fn(usize) -> usize>(

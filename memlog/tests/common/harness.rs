@@ -43,7 +43,15 @@ impl Value {
     pub fn exchange_weak(&mut self, old: usize, new: usize, ordering: Ordering) -> bool {
         self.wait();
         let mut mem = self.memory.lock().unwrap();
-        mem.exchange_old(self.thread, self.addr, old, new, ordering)
+        let f = |v| {
+            if v == old {
+                Some(new)
+            } else {
+                None
+            }
+        };
+        mem.fetch_update(self.thread, self.addr, f, ordering)
+            .is_ok()
     }
 
     pub fn load(&mut self, ordering: Ordering) -> usize {

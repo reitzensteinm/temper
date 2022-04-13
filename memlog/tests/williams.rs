@@ -214,11 +214,8 @@ fn test_5_9() {
 // Listing 5.10 pertains to consume memory order, and is skipped
 
 // Listing 5.11
-// Here, we decide to be more strict than the model described in the book. This is in line with
-// the Temper design philosophy, where the models can be more strict than those they emulate
-// A Relaxed exchange_weak in Thread 2 can break the happens before relationship between
-// Thread 1 and Thread 3, even though it should be a NOP unless Thread 1 happens before Thread 2
-// Todo: This is wrong (in the standard) https://en.cppreference.com/w/cpp/atomic/memory_order
+// Exchange weak, even with Ordering::Relaxed, continues the release chain from threads 1-3
+// Ref: https://en.cppreference.com/w/cpp/atomic/memory_order
 // Release / Acquire ordering
 // and RMWs (with any ordering) following a release form a release sequence
 #[test]
@@ -246,10 +243,7 @@ fn test_5_11() {
     }
 
     assert!(run_until(|| inner(Ordering::AcqRel), vec![vec![0, 0, 1]]));
-    assert!(run_until(
-        || inner(Ordering::Relaxed),
-        vec![vec![0, 0, 0], vec![0, 0, 1]]
-    ));
+    assert!(run_until(|| inner(Ordering::Relaxed), vec![vec![0, 0, 1]]));
 }
 
 // Listing 5.12
