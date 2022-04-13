@@ -112,13 +112,13 @@ impl MemorySystem {
 
         let seqs = if choice.level == Ordering::Relaxed {
             this_seqs
+        } else if level == Ordering::Release
+            || level == Ordering::AcqRel
+            || level == Ordering::SeqCst
+        {
+            combined_seqs
         } else {
-            if level == Ordering::Release || level == Ordering::AcqRel || level == Ordering::SeqCst
-            {
-                combined_seqs
-            } else {
-                choice_seqs
-            }
+            choice_seqs
         };
 
         self.log.push(MemoryOperation {
