@@ -1,6 +1,16 @@
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::sync::atomic::Ordering;
+
+#[allow(unused)]
+pub const ALL_ORDERINGS: [Ordering; 5] = [
+    Ordering::Relaxed,
+    Ordering::SeqCst,
+    Ordering::Acquire,
+    Ordering::Release,
+    Ordering::SeqCst,
+];
 
 fn check_set<T: Clone + Eq + Hash>(hs: &HashSet<T>, arr: &[T]) -> bool {
     let mut ns = HashSet::new();
@@ -19,7 +29,7 @@ pub fn run_until<T: Clone + Eq + Hash + Debug, F: FnMut() -> T>(
     for x in 0..10_000 {
         res.insert(f());
 
-        if check_set(&res, &expected) && x > 500 {
+        if check_set(&res, &expected) && x > 200 {
             return true;
         }
 
@@ -31,4 +41,42 @@ pub fn run_until<T: Clone + Eq + Hash + Debug, F: FnMut() -> T>(
 
     println!("Failed {:?} {:?}", res, expected);
     false
+}
+
+pub fn permutations(possible: Vec<Vec<usize>>) -> Vec<Vec<usize>> {
+    let mut out = vec![vec![]];
+
+    for x in possible {
+        let mut nout = vec![];
+
+        for v in x {
+            for o in out.iter() {
+                let mut new_val = o.clone();
+                new_val.push(v);
+                nout.push(new_val);
+            }
+        }
+
+        out = nout;
+    }
+
+    out
+}
+
+fn sorted<T: Clone + Ord>(mut v: Vec<T>) -> Vec<T> {
+    v.sort();
+    v
+}
+
+#[test]
+fn test_permutations() {
+    assert_eq!(
+        sorted(permutations(vec![vec![0, 1], vec![1, 2]])),
+        sorted(vec![vec![0, 1], vec![0, 2], vec![1, 1], vec![1, 2]])
+    );
+
+    assert_eq!(
+        sorted(permutations(vec![vec![0, 1, 2, 3]])),
+        sorted(vec![vec![0], vec![1], vec![2], vec![3]])
+    );
 }
