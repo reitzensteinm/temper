@@ -47,3 +47,5 @@
 5) ARM has dependent load memory ordering
 6) Check data races, https://en.cppreference.com/w/cpp/language/memory_model
 7) Exchange / fetch_add continue release chain
+8) Torn writes in memlog?
+9) Memlog time travel guarantees
