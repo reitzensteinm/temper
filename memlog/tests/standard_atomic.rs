@@ -1,5 +1,5 @@
 use crate::common::harness::{Environment, LogTest};
-use crate::common::utils::run_until;
+use crate::common::utils::{permutations, run_until};
 use std::sync::atomic::Ordering;
 
 mod common;
@@ -139,3 +139,75 @@ fn release_acquire_three_threads() {
 
     assert!(run_until(inner, vec![vec![0, 0, 1], vec![0, 1, 1]]));
 }
+
+// Sequential Consistency
+
+/*
+Each memory_order_seq_cst operation B that loads from atomic variable M, observes one of the following:
+ * the result of the last operation A that modified M, which appears before B in the single total order
+ * OR, if there was such an A, B may observe the result of some modification on M that is not memory_order_seq_cst and does not happen-before A
+ * OR, if there wasn't such an A, B may observe the result of some unrelated modification of M that is not memory_order_seq_cst
+*/
+
+// Todo: This is probably wrong!
+// Todo: Split thread a / b
+#[test]
+fn seq_cst_basic() {
+    fn inner() -> Vec<usize> {
+        let mut lt = LogTest::default();
+
+        lt.add(move |mut eg: Environment| {
+            eg.a.store(1, Ordering::Relaxed); // Unrelated modification of M that is not memory_order_seq_cst
+            eg.a.store(2, Ordering::SeqCst); // Operation A
+            eg.a.store(3, Ordering::Relaxed); // Does not happen before A
+            0
+        });
+
+        lt.add(move |mut eg: Environment| {
+            eg.a.load(Ordering::SeqCst) // Operation B
+        });
+
+        lt.run_sequential()
+    }
+
+    assert!(run_until(inner, permutations(vec![vec![0], vec![2, 3]])));
+}
+
+// Todo: This is my interpretation of the standard, which I don't believe is clear here
+// I _think_ it's describing B as a relaxed load
+// If B is SeqCst, B would observe the last SeqCst modification of M that appears before B which is a stronger guarantee than X
+
+/* If there was a memory_order_seq_cst std::atomic_thread_fence operation X sequenced-before B, then B observes one of the following:
+
+* the last memory_order_seq_cst modification of M that appears before X in the single total order
+* some unrelated modification of M that appears later in M's modification order
+*/
+
+// Todo: This is wrong!
+// Todo: Test A after Test B runs
+
+#[test]
+fn seq_cst_fence() {
+    fn inner() -> Vec<usize> {
+        let mut lt = LogTest::default();
+
+        lt.add(move |mut eg: Environment| {
+            eg.a.store(1, Ordering::Relaxed); // Unrelated modification of M that is not memory_order_seq_cst
+            eg.a.store(2, Ordering::SeqCst); // Operation A
+            eg.a.store(3, Ordering::Relaxed); // Does not happen before A
+
+            0
+        });
+
+        lt.add(move |mut eg: Environment| {
+            eg.fence(Ordering::SeqCst);
+            eg.a.load(Ordering::Relaxed) // Operation B
+        });
+
+        lt.run_sequential()
+    }
+
+    assert!(run_until(inner, permutations(vec![vec![0], vec![2, 3]])));
+}
+
+// Todo: More of the standard

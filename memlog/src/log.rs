@@ -22,6 +22,12 @@ impl MemorySequence {
     }
 }
 
+#[derive(Default)]
+pub struct SeqCstState {
+    pub sequence: MemorySequence,
+    pub global_order: usize,
+}
+
 #[derive(Debug)]
 pub struct MemoryOperation {
     pub thread: usize,
@@ -37,6 +43,7 @@ pub struct MemoryOperation {
 #[derive(Default)]
 pub struct ThreadView {
     pub sequence: usize,
+    pub min_seq_cst_sequence: usize,
     pub mem_sequence: MemorySequence,
     pub fence_sequence: MemorySequence,
     pub read_fence_sequence: MemorySequence,
@@ -44,7 +51,7 @@ pub struct ThreadView {
 
 pub struct MemorySystem {
     pub global_sequence: usize,
-    pub seq_cst_sequence: MemorySequence,
+    pub seq_cst_state: SeqCstState,
     pub log: Vec<MemoryOperation>,
     pub acc: Vec<MemoryOperation>,
     pub threads: Vec<ThreadView>,
@@ -70,7 +77,7 @@ impl MemorySystem {
             (level, level)
         };
 
-        Self::read_synchronize(view, choice, &self.seq_cst_sequence, load_ordering);
+        Self::read_synchronize(view, choice, load_ordering);
 
         let v = choice.value;
         let res = f(v);
@@ -82,7 +89,7 @@ impl MemorySystem {
         // Todo: Tests for load/Store ordering
         Self::write_synchronize(
             view,
-            &mut self.seq_cst_sequence,
+            &mut self.seq_cst_state,
             &mut self.global_sequence,
             addr,
             store_ordering,
@@ -143,18 +150,21 @@ impl MemorySystem {
                 || level == Ordering::AcqRel
         );
 
+        self.global_sequence += 1;
+
         let view = &mut self.threads[thread];
 
         if level == Ordering::SeqCst {
-            view.mem_sequence.synchronize(&self.seq_cst_sequence);
-            self.seq_cst_sequence.synchronize(&view.mem_sequence);
+            view.mem_sequence.synchronize(&self.seq_cst_state.sequence);
+            self.seq_cst_state.sequence.synchronize(&view.mem_sequence);
+            view.min_seq_cst_sequence = self.global_sequence;
         }
 
         if level == Ordering::Release || level == Ordering::SeqCst || level == Ordering::AcqRel {
             view.fence_sequence = view.mem_sequence.clone();
         }
 
-        if level == Ordering::Acquire || level == Ordering::AcqRel {
+        if level == Ordering::Acquire || level == Ordering::SeqCst || level == Ordering::AcqRel {
             view.mem_sequence.synchronize(&view.read_fence_sequence);
         }
     }
@@ -168,7 +178,7 @@ impl MemorySystem {
 
         Self::write_synchronize(
             view,
-            &mut self.seq_cst_sequence,
+            &mut self.seq_cst_state,
             &mut self.global_sequence,
             addr,
             level,
@@ -188,7 +198,7 @@ impl MemorySystem {
 
     fn write_synchronize(
         view: &mut ThreadView,
-        seq_cst_sequence: &mut MemorySequence,
+        seq_cst_sequence: &mut SeqCstState,
         global_sequence: &mut usize,
         addr: usize,
         level: Ordering,
@@ -198,7 +208,9 @@ impl MemorySystem {
         view.mem_sequence.sequence.insert(addr, *global_sequence);
 
         if level == Ordering::SeqCst {
-            seq_cst_sequence.synchronize(&view.mem_sequence);
+            // Todo: How to handle writes?
+            seq_cst_sequence.global_order = *global_sequence
+            //seq_cst_sequence.synchronize(&view.mem_sequence);
         }
 
         if level == Ordering::SeqCst || level == Ordering::Release {
@@ -206,16 +218,7 @@ impl MemorySystem {
         }
     }
 
-    fn read_synchronize(
-        view: &mut ThreadView,
-        choice: &MemoryOperation,
-        seq_cst_sequence: &MemorySequence,
-        level: Ordering,
-    ) {
-        if level == Ordering::SeqCst {
-            view.mem_sequence.synchronize(seq_cst_sequence);
-        }
-
+    fn read_synchronize(view: &mut ThreadView, choice: &MemoryOperation, level: Ordering) {
         if (choice.level == Ordering::Release || choice.level == Ordering::SeqCst)
             && (level == Ordering::SeqCst || level == Ordering::Acquire)
         {
@@ -247,18 +250,51 @@ impl MemorySystem {
 
         let possible: Vec<&MemoryOperation> = all_ops.filter(|mo| mo.address == addr).collect();
 
+        let seq_cst_ops = possible.iter().filter(|mo| mo.level == Ordering::SeqCst);
+
+        let minimum_op = if level == Ordering::SeqCst {
+            // A seq_cst load will see the latest seq_cst store if it exists
+            let latest_seq_cst_op = seq_cst_ops
+                .last()
+                .map(|mo| mo.global_sequence)
+                .unwrap_or(0_usize);
+
+            // A seq_cst load will see all stores (regardless of level) prior to a seq_cst memory fence
+            let latest_fence_op = self
+                .seq_cst_state
+                .sequence
+                .sequence
+                .get(&addr)
+                .unwrap_or(&0_usize);
+
+            latest_seq_cst_op.max(*latest_fence_op)
+        } else {
+            // A seq_cst fence on this thread causes the latest prior seq_cst store to be the minimum
+            seq_cst_ops
+                .filter(|mo| mo.global_sequence < view.min_seq_cst_sequence)
+                .last()
+                .map(|v| v.global_sequence)
+                .unwrap_or(0_usize)
+        };
+
         let first_ind = possible
             .iter()
             .position(|mo| {
-                mo.global_sequence >= *view.mem_sequence.sequence.get(&addr).unwrap_or(&0_usize)
+                mo.global_sequence
+                    >= *view
+                        .mem_sequence
+                        .sequence
+                        .get(&addr)
+                        .unwrap_or(&0_usize)
+                        .max(&minimum_op)
             })
-            .unwrap_or(0_usize);
+            .unwrap();
 
         let possible = &possible[first_ind..];
 
         let choice = possible[(rng.next_u32() as usize) % possible.len()];
 
-        Self::read_synchronize(view, choice, &self.seq_cst_sequence, level);
+        Self::read_synchronize(view, choice, level);
 
         choice.value
     }
@@ -291,7 +327,7 @@ impl Default for MemorySystem {
             ],
             acc,
             global_sequence: 10,
-            seq_cst_sequence: Default::default(),
+            seq_cst_state: Default::default(),
             log: vec![],
         }
     }

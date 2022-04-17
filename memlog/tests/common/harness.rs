@@ -4,6 +4,7 @@ use rand_chacha::ChaCha8Rng;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
+use std::thread::JoinHandle;
 
 pub struct ThreadState {
     pub finished: bool,
@@ -88,6 +89,11 @@ impl Environment {
     }
 }
 
+pub struct Thread<T> {
+    pub thread_state: Arc<Mutex<ThreadState>>,
+    pub handle: JoinHandle<T>,
+}
+
 #[derive(Default)]
 pub struct LogTest<T: Copy + Send + 'static> {
     pub fns: Vec<Box<dyn FnMut(Environment) -> T + Send>>,
@@ -98,56 +104,58 @@ impl<T: Copy + Send + 'static> LogTest<T> {
         self.fns.push(Box::new(f))
     }
 
-    pub fn run(&mut self) -> Vec<T> {
-        let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
-        let mut rng = ChaCha8Rng::seed_from_u64(s);
+    pub fn spawn_thread<F: FnMut(Environment) -> T + Send + 'static + Sized>(
+        ms: Arc<Mutex<MemorySystem>>,
+        i: usize,
+        mut f: F,
+    ) -> Thread<T> {
+        let ts = Arc::new(Mutex::new(ThreadState {
+            finished: false,
+            waiting: false,
+            barrier: Arc::new(Barrier::new(2)),
+            position: 0,
+        }));
 
-        let mut handles = vec![];
-        let ms = Arc::new(Mutex::new(MemorySystem::default()));
-        let mut threads = vec![];
-        for (i, mut f) in self.fns.drain(..).enumerate() {
-            let ts = Arc::new(Mutex::new(ThreadState {
-                finished: false,
-                waiting: false,
-                barrier: Arc::new(Barrier::new(2)),
-                position: 0,
-            }));
+        let env = Environment {
+            a: Value {
+                thread: i,
+                addr: 0,
+                thread_state: ts.clone(),
+                memory: ms.clone(),
+            },
+            b: Value {
+                thread: i,
+                addr: 1,
+                thread_state: ts.clone(),
+                memory: ms.clone(),
+            },
+            c: Value {
+                thread: i,
+                addr: 2,
+                thread_state: ts.clone(),
+                memory: ms,
+            },
+        };
 
-            threads.push(ts.clone());
-
-            let env = Environment {
-                a: Value {
-                    thread: i,
-                    addr: 0,
-                    thread_state: ts.clone(),
-                    memory: ms.clone(),
-                },
-                b: Value {
-                    thread: i,
-                    addr: 1,
-                    thread_state: ts.clone(),
-                    memory: ms.clone(),
-                },
-                c: Value {
-                    thread: i,
-                    addr: 2,
-                    thread_state: ts.clone(),
-                    memory: ms.clone(),
-                },
-            };
-
-            handles.push(thread::spawn(move || {
+        Thread {
+            thread_state: ts.clone(),
+            handle: thread::spawn(move || {
                 let res: T = f(env);
                 ts.lock().unwrap().finished = true;
                 res
-            }));
+            }),
         }
+    }
+
+    pub fn drive(mut threads: Vec<Thread<T>>) -> Vec<T> {
+        let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
+        let mut rng = ChaCha8Rng::seed_from_u64(s);
 
         loop {
             let mut all_finished = true;
             let mut all_waiting = true;
             for tsm in threads.iter() {
-                let ts = tsm.lock().unwrap();
+                let ts = tsm.thread_state.lock().unwrap();
                 if !ts.finished {
                     all_finished = false;
 
@@ -164,7 +172,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
             if all_waiting {
                 let ind = (rng.next_u32() as usize) % threads.len();
                 let r = &mut threads[ind];
-                let mut l = r.lock().unwrap();
+                let mut l = r.thread_state.lock().unwrap();
                 if l.waiting {
                     l.waiting = false;
                     l.barrier.wait();
@@ -174,10 +182,37 @@ impl<T: Copy + Send + 'static> LogTest<T> {
 
         let mut res = vec![];
 
-        for h in handles.drain(..) {
-            res.push(h.join().unwrap())
+        for h in threads.drain(..) {
+            res.push(h.handle.join().unwrap())
         }
 
         res
+    }
+
+    // Runs all threads randomly interleaved
+    #[allow(unused)]
+    pub fn run(&mut self) -> Vec<T> {
+        let ms = Arc::new(Mutex::new(MemorySystem::default()));
+        let mut threads = vec![];
+
+        for (i, f) in self.fns.drain(..).enumerate() {
+            threads.push(Self::spawn_thread(ms.clone(), i, f));
+        }
+
+        Self::drive(threads)
+    }
+
+    // Runs Thread A fully, then Thread B, etc
+    #[allow(unused)]
+    pub fn run_sequential(&mut self) -> Vec<T> {
+        let ms = Arc::new(Mutex::new(MemorySystem::default()));
+
+        let mut results = vec![];
+
+        for (i, f) in self.fns.drain(..).enumerate() {
+            results.push(Self::drive(vec![Self::spawn_thread(ms.clone(), i, f)])[0]);
+        }
+
+        results
     }
 }
