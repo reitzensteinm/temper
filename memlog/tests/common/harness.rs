@@ -13,6 +13,20 @@ pub struct ThreadState {
     pub position: usize,
 }
 
+impl ThreadState {
+    pub fn wait(thread_state: &Arc<Mutex<ThreadState>>) {
+        {
+            let mut ts = thread_state.lock().unwrap();
+            ts.waiting = true;
+            let barrier = ts.barrier.clone();
+            drop(ts);
+            barrier.wait();
+        }
+
+        while thread_state.lock().unwrap().waiting {}
+    }
+}
+
 pub struct Value {
     pub thread: usize,
     pub addr: usize,
@@ -22,15 +36,7 @@ pub struct Value {
 
 impl Value {
     pub fn wait(&mut self) {
-        {
-            let mut ts = self.thread_state.lock().unwrap();
-            ts.waiting = true;
-            let barrier = ts.barrier.clone();
-            drop(ts);
-            barrier.wait();
-        }
-
-        while self.thread_state.lock().unwrap().waiting {}
+        ThreadState::wait(&self.thread_state);
     }
 
     #[allow(unused)]
@@ -73,6 +79,7 @@ impl Value {
 }
 
 pub struct Environment {
+    pub thread_state: Arc<Mutex<ThreadState>>,
     pub a: Value,
     pub b: Value,
     pub c: Value,
@@ -81,8 +88,7 @@ pub struct Environment {
 impl Environment {
     #[allow(unused)]
     pub fn fence(&mut self, ordering: Ordering) {
-        // Todo: This is gross!
-        self.a.wait();
+        ThreadState::wait(&self.thread_state);
         let mut mem = self.a.memory.lock().unwrap();
         mem.fence(self.a.thread, ordering)
     }
@@ -116,6 +122,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
         }));
 
         let env = Environment {
+            thread_state: ts.clone(),
             a: Value {
                 thread: i,
                 addr: 0,
