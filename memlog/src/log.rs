@@ -22,12 +22,6 @@ impl MemorySequence {
     }
 }
 
-#[derive(Default)]
-pub struct SeqCstState {
-    pub sequence: MemorySequence,
-    pub global_order: usize,
-}
-
 #[derive(Debug)]
 pub struct MemoryOperation {
     pub thread: usize,
@@ -51,7 +45,7 @@ pub struct ThreadView {
 
 pub struct MemorySystem {
     pub global_sequence: usize,
-    pub seq_cst_state: SeqCstState,
+    pub seq_cst_sequence: MemorySequence,
     pub log: Vec<MemoryOperation>,
     pub acc: Vec<MemoryOperation>,
     pub threads: Vec<ThreadView>,
@@ -86,13 +80,7 @@ impl MemorySystem {
             return Err(v);
         }
 
-        Self::write_synchronize(
-            view,
-            &mut self.seq_cst_state,
-            &mut self.global_sequence,
-            addr,
-            store_ordering,
-        );
+        Self::write_synchronize(view, &mut self.global_sequence, addr, store_ordering);
 
         let choice_seqs = (
             choice.source_sequence.clone(),
@@ -147,8 +135,8 @@ impl MemorySystem {
         let view = &mut self.threads[thread];
 
         if level == Ordering::SeqCst {
-            view.mem_sequence.synchronize(&self.seq_cst_state.sequence);
-            self.seq_cst_state.sequence.synchronize(&view.mem_sequence);
+            view.mem_sequence.synchronize(&self.seq_cst_sequence);
+            self.seq_cst_sequence.synchronize(&view.mem_sequence);
             view.min_seq_cst_sequence = self.global_sequence;
         }
 
@@ -168,13 +156,7 @@ impl MemorySystem {
 
         let view = &mut self.threads[thread];
 
-        Self::write_synchronize(
-            view,
-            &mut self.seq_cst_state,
-            &mut self.global_sequence,
-            addr,
-            level,
-        );
+        Self::write_synchronize(view, &mut self.global_sequence, addr, level);
 
         self.log.push(MemoryOperation {
             thread,
@@ -190,7 +172,6 @@ impl MemorySystem {
 
     fn write_synchronize(
         view: &mut ThreadView,
-        seq_cst_sequence: &mut SeqCstState,
         global_sequence: &mut usize,
         addr: usize,
         level: Ordering,
@@ -198,12 +179,6 @@ impl MemorySystem {
         *global_sequence += 1;
         view.sequence += 1;
         view.mem_sequence.sequence.insert(addr, *global_sequence);
-
-        if level == Ordering::SeqCst {
-            // Todo: How to handle writes?
-            seq_cst_sequence.global_order = *global_sequence
-            //seq_cst_sequence.synchronize(&view.mem_sequence);
-        }
 
         if level == Ordering::SeqCst || level == Ordering::Release {
             view.fence_sequence = view.mem_sequence.clone();
@@ -253,8 +228,7 @@ impl MemorySystem {
 
             // A seq_cst load will see all stores (regardless of level) prior to a seq_cst memory fence
             let latest_fence_op = self
-                .seq_cst_state
-                .sequence
+                .seq_cst_sequence
                 .sequence
                 .get(&addr)
                 .unwrap_or(&0_usize);
@@ -319,7 +293,7 @@ impl Default for MemorySystem {
             ],
             acc,
             global_sequence: 10,
-            seq_cst_state: Default::default(),
+            seq_cst_sequence: Default::default(),
             log: vec![],
         }
     }
