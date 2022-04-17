@@ -120,7 +120,6 @@ fn release_acquire_three_threads() {
         let mut lt = LogTest::default();
 
         lt.add(move |mut eg: Environment| {
-            // Todo: Convert this to non atomic type
             eg.a.store(1, Ordering::Relaxed);
             eg.b.store(1, Ordering::Release);
             0
@@ -204,8 +203,6 @@ fn seq_cst_fence() {
 
     assert!(run_until(inner, permutations(vec![vec![0], vec![2, 3]])));
 }
-
-// Todo: More of the standard
 
 /*
 For a pair of atomic operations on M called A and B, where A writes and B reads M's value,
