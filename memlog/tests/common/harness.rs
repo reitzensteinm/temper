@@ -38,11 +38,10 @@ impl Value {
         &mut self,
         f: F,
         ordering: Ordering,
-    ) -> bool {
+    ) -> Result<usize, usize> {
         self.wait();
         let mut mem = self.memory.lock().unwrap();
         mem.fetch_update(self.thread, self.addr, f, ordering)
-            .is_ok()
     }
 
     #[allow(unused)]

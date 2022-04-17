@@ -102,3 +102,28 @@ fn test_fence_fence() {
 
     assert!(run_until(inner, permutations(vec![vec![0], vec![2, 3]])));
 }
+
+// Store buffer litmus test. SeqCst rules out 0, 0 as a result
+#[test]
+fn test_intel_failure() {
+    fn intel_failure_inner() -> Vec<usize> {
+        let mut lt = LogTest::default();
+
+        lt.add(|mut eg: Environment| {
+            eg.a.store(1, Ordering::SeqCst);
+            eg.b.load(Ordering::SeqCst)
+        });
+
+        lt.add(|mut eg: Environment| {
+            eg.b.store(1, Ordering::SeqCst);
+            eg.a.load(Ordering::SeqCst)
+        });
+
+        lt.run()
+    }
+
+    assert!(run_until(
+        intel_failure_inner,
+        vec![vec![0, 1], vec![1, 0], vec![1, 1]]
+    ));
+}
