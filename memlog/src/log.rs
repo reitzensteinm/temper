@@ -285,6 +285,7 @@ impl Default for MemorySystem {
         }
 
         MemorySystem {
+            // Todo: Allocate threads lazily
             threads: vec![
                 ThreadView::default(),
                 ThreadView::default(),
