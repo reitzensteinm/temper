@@ -149,8 +149,6 @@ Each memory_order_seq_cst operation B that loads from atomic variable M, observe
  * OR, if there wasn't such an A, B may observe the result of some unrelated modification of M that is not memory_order_seq_cst
 */
 
-// Todo: This is probably wrong!
-// Todo: Split thread a / b
 #[test]
 fn seq_cst_basic() {
     fn inner() -> Vec<usize> {
@@ -173,18 +171,11 @@ fn seq_cst_basic() {
     assert!(run_until(inner, permutations(vec![vec![0], vec![2, 3]])));
 }
 
-// Todo: This is my interpretation of the standard, which I don't believe is clear here
-// I _think_ it's describing B as a relaxed load
-// If B is SeqCst, B would observe the last SeqCst modification of M that appears before B which is a stronger guarantee than X
-
 /* If there was a memory_order_seq_cst std::atomic_thread_fence operation X sequenced-before B, then B observes one of the following:
 
 * the last memory_order_seq_cst modification of M that appears before X in the single total order
 * some unrelated modification of M that appears later in M's modification order
 */
-
-// Todo: This is wrong!
-// Todo: Test A after Test B runs
 
 #[test]
 fn seq_cst_fence() {
