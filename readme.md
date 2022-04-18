@@ -2,10 +2,17 @@
 
 ### Memlog
 
-* Threads cannot send information forward in time
-* Detect torn reads / writes
+* Note: Threads cannot send information forward in time
+* Add volatile and detect torn reads / writes
+* Detect data races https://en.cppreference.com/w/cpp/language/memory_model  
+* Dynamic allocation of vars/threads
+* Clean up harness
 
 ### Sprints
+
+**Memlog Sprint**
+* Finish Memlog tasks
+* Implement 
 
 **Queue Sprint**
 * Build industrial queue
@@ -38,13 +45,3 @@
 3) False sharing analysis?
 4) Fuzz corrupted messages/disk
 5) Guards or linting to ensure we don't immediately consume values
-
-### Things to consider
-
-1) Do we go with LoadLoad, StoreStore etc barrier designation?
-2) How is a LoadStore barrier different to Sequential Consistency?
-3) Do we need to rename atomics?
-4) Detecting sheared shared memory buffer?
-5) ARM has dependent load memory ordering
-6) Check data races, https://en.cppreference.com/w/cpp/language/memory_model
-8) Torn writes in memlog?
