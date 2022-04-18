@@ -30,8 +30,22 @@ pub struct MemoryOperation {
     pub level: Ordering,
     pub address: usize,
     pub value: usize,
+    pub release_chain: bool,
     pub source_sequence: MemorySequence,
-    pub source_fence_sequence: MemorySequence,
+    pub source_fence_sequence: FenceSequence,
+}
+
+#[derive(Default, Clone, Debug)]
+pub struct FenceSequence {
+    pub atomic: MemorySequence,
+    pub fence: MemorySequence,
+}
+
+impl FenceSequence {
+    pub fn synchronize(&mut self, other: &FenceSequence) {
+        self.atomic.synchronize(&other.atomic);
+        self.fence.synchronize(&other.fence);
+    }
 }
 
 #[derive(Default)]
@@ -39,8 +53,8 @@ pub struct ThreadView {
     pub sequence: usize,
     pub min_seq_cst_sequence: usize,
     pub mem_sequence: MemorySequence,
-    pub fence_sequence: MemorySequence,
-    pub read_fence_sequence: MemorySequence,
+    pub fence_sequence: FenceSequence,
+    pub read_fence_sequence: FenceSequence,
 }
 
 pub struct MemorySystem {
@@ -97,6 +111,9 @@ impl MemorySystem {
             (ms, fs)
         };
 
+        // Are we continuing a release chain?
+        let release_chain = choice.level != Ordering::Relaxed;
+
         let seqs = if choice.level == Ordering::Relaxed {
             this_seqs
         } else if level == Ordering::Release
@@ -114,6 +131,7 @@ impl MemorySystem {
             global_sequence: self.global_sequence,
             source_fence_sequence: seqs.1,
             level,
+            release_chain,
             source_sequence: seqs.0,
             address: addr,
             value: res.unwrap(),
@@ -141,11 +159,14 @@ impl MemorySystem {
         }
 
         if level == Ordering::Release || level == Ordering::SeqCst || level == Ordering::AcqRel {
-            view.fence_sequence = view.mem_sequence.clone();
+            view.fence_sequence.fence.synchronize(&view.mem_sequence);
         }
 
         if level == Ordering::Acquire || level == Ordering::SeqCst || level == Ordering::AcqRel {
-            view.mem_sequence.synchronize(&view.read_fence_sequence);
+            view.mem_sequence
+                .synchronize(&view.read_fence_sequence.fence);
+            view.mem_sequence
+                .synchronize(&view.read_fence_sequence.atomic);
         }
     }
 
@@ -164,6 +185,7 @@ impl MemorySystem {
             global_sequence: self.global_sequence,
             source_fence_sequence: view.fence_sequence.clone(),
             level,
+            release_chain: false,
             source_sequence: view.mem_sequence.clone(),
             address: addr,
             value: val,
@@ -181,19 +203,22 @@ impl MemorySystem {
         view.mem_sequence.sequence.insert(addr, *global_sequence);
 
         if level == Ordering::SeqCst || level == Ordering::Release {
-            view.fence_sequence = view.mem_sequence.clone();
+            view.fence_sequence.atomic.synchronize(&view.mem_sequence);
         }
     }
 
     fn read_synchronize(view: &mut ThreadView, choice: &MemoryOperation, level: Ordering) {
-        if (choice.level == Ordering::Release || choice.level == Ordering::SeqCst)
+        if (choice.level == Ordering::Release
+            || choice.level == Ordering::SeqCst
+            || choice.release_chain)
             && (level == Ordering::SeqCst || level == Ordering::Acquire)
         {
             view.mem_sequence.synchronize(&choice.source_sequence);
         }
 
         if level == Ordering::Acquire || level == Ordering::SeqCst {
-            view.mem_sequence.synchronize(&choice.source_fence_sequence);
+            view.mem_sequence
+                .synchronize(&choice.source_fence_sequence.fence);
         }
 
         view.read_fence_sequence
@@ -277,6 +302,7 @@ impl Default for MemorySystem {
                 thread_sequence: 0,
                 global_sequence: 0,
                 level: Ordering::Relaxed,
+                release_chain: false,
                 address: i,
                 value: 0,
                 source_sequence: Default::default(),
