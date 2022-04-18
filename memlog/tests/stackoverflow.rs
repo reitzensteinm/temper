@@ -90,3 +90,70 @@ fn test_exchange_fence() {
 
     assert!(run_until(inner, vec![vec![0, 1]]));
 }
+
+// https://stackoverflow.com/questions/71509935/how-does-mixing-relaxed-and-acquire-release-accesses-on-the-same-atomic-variable
+#[test]
+fn test_broken_release_chain() {
+    fn inner() -> Vec<usize> {
+        let mut lt = LogTest::default();
+
+        lt.add(|mut eg: Environment| {
+            eg.a.store(42, Ordering::Relaxed);
+            eg.b.store(1, Ordering::Release);
+            0
+        });
+
+        lt.add(|mut eg: Environment| {
+            if eg.b.load(Ordering::Relaxed) == 1 {
+                eg.b.store(2, Ordering::Relaxed);
+            }
+            0
+        });
+
+        lt.add(|mut eg: Environment| {
+            let v = eg.b.load(Ordering::Acquire);
+            let ov = eg.a.load(Ordering::Relaxed);
+
+            v + ov
+        });
+
+        lt.run()
+    }
+
+    assert!(run_until(
+        inner,
+        vec![
+            vec![0, 0, 0],
+            vec![0, 0, 2], // Broken release chain
+            vec![0, 0, 42],
+            vec![0, 0, 43],
+            vec![0, 0, 44]
+        ]
+    ));
+}
+
+// https://stackoverflow.com/questions/67693687/possible-orderings-with-memory-order-seq-cst-and-memory-order-release
+
+#[test]
+fn test_intel_failure_release() {
+    fn intel_failure_inner() -> Vec<usize> {
+        let mut lt = LogTest::default();
+
+        lt.add(|mut eg: Environment| {
+            eg.a.store(1, Ordering::Release);
+            eg.b.load(Ordering::SeqCst)
+        });
+
+        lt.add(|mut eg: Environment| {
+            eg.b.store(1, Ordering::Release);
+            eg.a.load(Ordering::SeqCst)
+        });
+
+        lt.run()
+    }
+
+    assert!(run_until(
+        intel_failure_inner,
+        vec![vec![0, 0], vec![0, 1], vec![1, 0], vec![1, 1]]
+    ));
+}
