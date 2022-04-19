@@ -114,6 +114,8 @@ impl<T: Copy + Send + 'static> LogTest<T> {
         i: usize,
         mut f: F,
     ) -> Thread<T> {
+        ms.lock().unwrap().add_thread();
+
         let ts = Arc::new(Mutex::new(ThreadState {
             finished: false,
             waiting: false,
@@ -199,6 +201,8 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     #[allow(unused)]
     pub fn run(&mut self) -> Vec<T> {
         let ms = Arc::new(Mutex::new(MemorySystem::default()));
+        ms.lock().unwrap().malloc(3);
+
         let mut threads = vec![];
 
         for (i, f) in self.fns.drain(..).enumerate() {
@@ -212,6 +216,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     #[allow(unused)]
     pub fn run_sequential(&mut self) -> Vec<T> {
         let ms = Arc::new(Mutex::new(MemorySystem::default()));
+        ms.lock().unwrap().malloc(3);
 
         let mut results = vec![];
 
