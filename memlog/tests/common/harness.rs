@@ -123,26 +123,25 @@ impl<T: Copy + Send + 'static> LogTest<T> {
             position: 0,
         }));
 
+        let mut addr = 0;
+
+        let mut build_value = || {
+            let res = Value {
+                thread: i,
+                addr,
+                thread_state: ts.clone(),
+                memory: ms.clone(),
+            };
+
+            addr += 1;
+            res
+        };
+
         let env = Environment {
             thread_state: ts.clone(),
-            a: Value {
-                thread: i,
-                addr: 0,
-                thread_state: ts.clone(),
-                memory: ms.clone(),
-            },
-            b: Value {
-                thread: i,
-                addr: 1,
-                thread_state: ts.clone(),
-                memory: ms.clone(),
-            },
-            c: Value {
-                thread: i,
-                addr: 2,
-                thread_state: ts.clone(),
-                memory: ms,
-            },
+            a: build_value(),
+            b: build_value(),
+            c: build_value(),
         };
 
         Thread {
