@@ -7,7 +7,6 @@
 * Detect data races https://en.cppreference.com/w/cpp/language/memory_model
 * Make memlog store any type
 * Expose API to declare what can be reordered
-* Detect cache line contention
 
 ### Sprints
 
@@ -46,3 +45,4 @@
 3) False sharing analysis?
 4) Fuzz corrupted messages/disk
 5) Guards or linting to ensure we don't immediately consume values
+6) Detect cache line contention
