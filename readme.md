@@ -5,7 +5,6 @@
 * Note: Threads cannot send information forward in time
 * Add volatile and detect torn reads / writes
 * Detect data races https://en.cppreference.com/w/cpp/language/memory_model
-* Make memlog store any type
 * Expose API to declare what can be reordered
 
 ### Sprints
