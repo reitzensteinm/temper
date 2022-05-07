@@ -4,15 +4,14 @@
 
 * Note: Threads cannot send information forward in time
 * Add volatile and detect torn reads / writes
-* Detect data races https://en.cppreference.com/w/cpp/language/memory_model  
-* Dynamic allocation of vars/threads
-* Clean up harness
+* Detect data races https://en.cppreference.com/w/cpp/language/memory_model
+* Expose API to declare what can be reordered
 
 ### Sprints
 
 **Memlog Sprint**
 * Finish Memlog tasks
-* Implement 
+* Implement Memlog backed version of Temper
 
 **Queue Sprint**
 * Build industrial queue
@@ -45,3 +44,4 @@
 3) False sharing analysis?
 4) Fuzz corrupted messages/disk
 5) Guards or linting to ensure we don't immediately consume values
+6) Detect cache line contention

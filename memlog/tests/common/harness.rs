@@ -114,6 +114,8 @@ impl<T: Copy + Send + 'static> LogTest<T> {
         i: usize,
         mut f: F,
     ) -> Thread<T> {
+        ms.lock().unwrap().add_thread();
+
         let ts = Arc::new(Mutex::new(ThreadState {
             finished: false,
             waiting: false,
@@ -121,26 +123,25 @@ impl<T: Copy + Send + 'static> LogTest<T> {
             position: 0,
         }));
 
+        let mut addr = 0;
+
+        let mut build_value = || {
+            let res = Value {
+                thread: i,
+                addr,
+                thread_state: ts.clone(),
+                memory: ms.clone(),
+            };
+
+            addr += 1;
+            res
+        };
+
         let env = Environment {
             thread_state: ts.clone(),
-            a: Value {
-                thread: i,
-                addr: 0,
-                thread_state: ts.clone(),
-                memory: ms.clone(),
-            },
-            b: Value {
-                thread: i,
-                addr: 1,
-                thread_state: ts.clone(),
-                memory: ms.clone(),
-            },
-            c: Value {
-                thread: i,
-                addr: 2,
-                thread_state: ts.clone(),
-                memory: ms,
-            },
+            a: build_value(),
+            b: build_value(),
+            c: build_value(),
         };
 
         Thread {
@@ -199,6 +200,8 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     #[allow(unused)]
     pub fn run(&mut self) -> Vec<T> {
         let ms = Arc::new(Mutex::new(MemorySystem::default()));
+        ms.lock().unwrap().malloc(3);
+
         let mut threads = vec![];
 
         for (i, f) in self.fns.drain(..).enumerate() {
@@ -212,6 +215,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     #[allow(unused)]
     pub fn run_sequential(&mut self) -> Vec<T> {
         let ms = Arc::new(Mutex::new(MemorySystem::default()));
+        ms.lock().unwrap().malloc(3);
 
         let mut results = vec![];
 

@@ -293,11 +293,30 @@ impl MemorySystem {
 
 impl Default for MemorySystem {
     fn default() -> Self {
-        let mut acc = vec![];
+        MemorySystem {
+            threads: vec![],
+            acc: vec![],
+            global_sequence: 10,
+            seq_cst_sequence: Default::default(),
+            log: vec![],
+        }
+    }
+}
 
-        // Todo: Allocate the right number of buckets! malloc!()
-        for i in 0..10 {
-            acc.push(MemoryOperation {
+impl MemorySystem {
+    pub fn add_thread(&mut self) -> usize {
+        let v = self.threads.len();
+
+        self.threads.push(ThreadView::default());
+
+        v
+    }
+
+    pub fn malloc(&mut self, size: usize) -> usize {
+        let base = self.acc.len();
+
+        for i in 0..size {
+            self.acc.push(MemoryOperation {
                 thread: 0,
                 thread_sequence: 0,
                 global_sequence: 0,
@@ -310,18 +329,6 @@ impl Default for MemorySystem {
             })
         }
 
-        MemorySystem {
-            // Todo: Allocate threads lazily
-            threads: vec![
-                ThreadView::default(),
-                ThreadView::default(),
-                ThreadView::default(),
-                ThreadView::default(),
-            ],
-            acc,
-            global_sequence: 10,
-            seq_cst_sequence: Default::default(),
-            log: vec![],
-        }
+        base
     }
 }
