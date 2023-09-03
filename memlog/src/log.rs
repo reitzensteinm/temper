@@ -46,6 +46,13 @@ impl FenceSequence {
         self.atomic.synchronize(&other.atomic);
         self.fence.synchronize(&other.fence);
     }
+
+    pub fn mask_atomic(&self) -> FenceSequence {
+        FenceSequence {
+            atomic: Default::default(),
+            ..self.clone()
+        }
+    }
 }
 
 #[derive(Default)]
@@ -125,11 +132,17 @@ impl MemorySystem {
             choice_seqs
         };
 
+        let fence_sequence = if store_ordering == Ordering::Relaxed {
+            seqs.1.mask_atomic()
+        } else {
+            seqs.1.clone()
+        };
+
         self.log.push(MemoryOperation {
             thread,
             thread_sequence: view.sequence,
             global_sequence: self.global_sequence,
-            source_fence_sequence: seqs.1,
+            source_fence_sequence: fence_sequence,
             level,
             release_chain,
             source_sequence: seqs.0,
@@ -179,11 +192,17 @@ impl MemorySystem {
 
         Self::write_synchronize(view, &mut self.global_sequence, addr, level);
 
+        let fence_sequence = if level == Ordering::Relaxed {
+            view.fence_sequence.mask_atomic()
+        } else {
+            view.fence_sequence.clone()
+        };
+
         self.log.push(MemoryOperation {
             thread,
             thread_sequence: view.sequence,
             global_sequence: self.global_sequence,
-            source_fence_sequence: view.fence_sequence.clone(),
+            source_fence_sequence: fence_sequence,
             level,
             release_chain: false,
             source_sequence: view.mem_sequence.clone(),
