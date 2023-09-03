@@ -9,7 +9,7 @@ pub const ALL_ORDERINGS: [Ordering; 5] = [
     Ordering::SeqCst,
     Ordering::Acquire,
     Ordering::Release,
-    Ordering::SeqCst,
+    Ordering::AcqRel,
 ];
 
 fn check_set<T: Clone + Eq + Hash>(hs: &HashSet<T>, arr: &[T]) -> bool {
