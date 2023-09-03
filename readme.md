@@ -1,47 +1,62 @@
-# Temper.rs
+# Temper
+
+## About
+
+Temper is a framework for modelling concurrency and failure in distributed systems. The name comes from Temporal Fuzzing, a term coined by [Rachel Kroll](https://rachelbythebay.com/w/2011/11/19/sleep/).
+
+Similar to [Loom](https://github.com/tokio-rs/loom), programs targeting Temper should be able to switch between simulation mode, and calling real APIs in release mode.
+
+It is in early development, and is not yet more than an experiment. It currently features:
+
+* Low level x86/ARM memory models
+* Rust/C++ 11 memory model
+
+Planned features:
+
+* MESI protocol simulation to measure cache line contention and false sharing
+* Data race detection
+* TCP/IP, including congestion, asymmetric net splits, and Byzantine faults
+* Disk operations, including fsync and [power failure corruption](https://danluu.com/file-consistency/)
+* SQL transactional isolation
+
+Related Work:
+
+* [Madsim](https://github.com/madsim-rs/madsim), a similar project with an emphasis on networking
+* FoundationDB's [testing strategy](https://www.youtube.com/watch?v=4fFDFbi3toc)
+* TigerBeetle's [fault injection](https://www.youtube.com/watch?v=BH2jvJ74npM) testing
+* [Loom](https://github.com/tokio-rs/loom), which exhaustively tests on a single node
+* [Timecraft](https://github.com/stealthrocket/timecraft), a distributed system testing tool for WebAssembly
+
+## Components
 
 ### Memlog
 
-* Note: Threads cannot send information forward in time
-* Add volatile and detect torn reads / writes
-* Detect data races https://en.cppreference.com/w/cpp/language/memory_model
+Memlog simulates the Rust memory model (C++ 11 without Consume). Combined with operation reordering in Temper, its goal is full coverage. It contains a series of test cases dervied from [Preshing on Programming](https://preshing.com/), [C++ Concurrency in Action](https://www.amazon.com.au/C-Concurrency-Action-Practical-Multithreading/dp/1933988770), the [C++ Standard](https://en.cppreference.com/w/cpp/atomic/atomic_thread_fence), [blog posts](https://puzpuzpuz.dev/seqlock-based-atomic-memory-snapshots) and [many](https://stackoverflow.com/questions/47520748/c-memory-model-do-seq-cst-loads-synchronize-with-seq-cst-stores) [Stack](https://stackoverflow.com/questions/52606524/what-exact-rules-in-the-c-memory-model-prevent-reordering-before-acquire-opera) [Overflow](https://stackoverflow.com/questions/71509935/how-does-mixing-relaxed-and-acquire-release-accesses-on-the-same-atomic-variable) [questions](https://stackoverflow.com/questions/67693687/possible-orderings-with-memory-order-seq-cst-and-memory-order-release).
+
+Todo:
+* Detect [data races](https://en.cppreference.com/w/cpp/language/memory_model)
 * Expose API to declare what can be reordered
+* MESI protocol simulation
+* Locks
 
-### Sprints
+### Low Level
 
-**Memlog Sprint**
-* Finish Memlog tasks
-* Implement Memlog backed version of Temper
+Temper contains a low level simulation of x86/ARM memory models. It is intended for experimentation, as the operations cannot be translated to standard Rust calls in release mode.
 
-**Queue Sprint**
-* Build industrial queue
-* Mechanism for crate swapping for release
-* Deterministic testing with seeds and reproducibility
-
-**Disk Sprint**
-* System sharing
-* TCP
-* Disk w/ fsync, on dirs
-* Get/Set with LSM server and client
-
-**Low Level Sprint**
-* Acquire/Release semantics for Atomics, Fences
+Todo: 
+* Non-coherent memory models (Alpha)
 * Locks
 * CAS
-* Non-coherent memory models
+* Platform specific barriers
 * Spin forever under contention
 
-**Distributed Systems & CRDT Sprint**
-* Model simple CRDT
-* Turning off network connections?
-* Implement Raft
-* Netsplit
+### Future Work
 
-### Misc Ideas
-
-1) Visualization exporting
-2) Netsplits
-3) False sharing analysis?
-4) Fuzz corrupted messages/disk
-5) Guards or linting to ensure we don't immediately consume values
-6) Detect cache line contention
+* Crate swap mechanism for release
+* Sample lock free algorithms, such as a MPMC queue
+* Deterministic testing with seeds and reproducibility
+* Disk w/ fsync, power failure, corruption
+* Sample Disk LSM system
+* TCP with net splits, latency and Byzantine faults
+* Sample Raft protocol
+* Visualisation
