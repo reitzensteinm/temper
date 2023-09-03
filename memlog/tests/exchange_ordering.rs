@@ -99,3 +99,142 @@ fn release_acquire_three_threads() {
         vec![vec![0], vec![1], vec![11]],
     );
 }
+
+/* SeqLock
+Based on blog post:
+https://puzpuzpuz.dev/seqlock-based-atomic-memory-snapshots
+
+SeqLocks enable atomic operations for multiple read and write threads.
+ * Write access is protected by CAS to prevent multiple threads entering the critical section
+ * Read access is optimistic, writes versioned. Readers ensure version did not change while reading.
+ */
+
+#[test]
+fn test_seqlock() {
+    fn intel_failure_inner() -> Vec<usize> {
+        let mut lt = LogTest::default();
+
+        lt.add(|mut eg: Environment| loop {
+            let version = eg.a.load(Ordering::Relaxed);
+            if version & 1 == 1 {
+                continue;
+            }
+
+            if !eg.a.exchange_weak(version, version + 1, Ordering::Relaxed) {
+                continue;
+            }
+
+            eg.fence(Ordering::Release);
+
+            eg.b.store(1, Ordering::Relaxed);
+            eg.c.store(1, Ordering::Relaxed);
+
+            eg.a.store(version + 2, Ordering::Release);
+            return 0;
+        });
+
+        lt.add(|mut eg: Environment| loop {
+            let version = eg.a.load(Ordering::Acquire);
+            if version & 1 == 1 {
+                continue;
+            }
+
+            let b = eg.b.load(Ordering::Relaxed);
+            let c = eg.c.load(Ordering::Relaxed);
+
+            eg.fence(Ordering::Acquire);
+
+            let current_version = eg.a.load(Ordering::Relaxed);
+
+            if current_version == version {
+                return b + c;
+            }
+        });
+
+        lt.run()
+    }
+
+    assert!(run_until(intel_failure_inner, vec![vec![0, 0], vec![0, 2]]));
+}
+
+#[test]
+fn acquire_chain_test() {
+    enum AcquireChainStrategy {
+        WeakExchangeFence,
+        AcqRelExchange,
+        StoreRelease,
+    }
+
+    fn tiny_test(strategy: AcquireChainStrategy) -> Vec<usize> {
+        let mut lt = LogTest::default();
+
+        lt.add(move |mut eg: Environment| {
+            match strategy {
+                AcquireChainStrategy::WeakExchangeFence => {
+                    // Fence is required for correctness
+                    while !eg.a.exchange_weak(0, 1, Ordering::Relaxed) {}
+                    eg.fence(Ordering::Release);
+                }
+                AcquireChainStrategy::AcqRelExchange => {
+                    // AcqRel only guarantees Acquire on load, Release on store.
+                    // Relaxed stores below are _not_ guaranteed to not be reordered before this store
+                    // See https://en.cppreference.com/w/cpp/atomic/memory_order - memory_order_acq_rel
+                    while !eg.a.exchange_weak(0, 1, Ordering::AcqRel) {}
+                }
+                AcquireChainStrategy::StoreRelease => {
+                    // Isn't even an edge case. This should obviously not work.
+                    // Exists as a regression test against a memlog bug where relaxed stores
+                    // and loads combined with an Acquire fence were erroneously creating a
+                    // release chain and providing additional guarantees.
+                    eg.a.store(1, Ordering::Release);
+                }
+            }
+
+            eg.b.store(1, Ordering::Relaxed);
+            eg.b.store(2, Ordering::Relaxed);
+
+            eg.a.store(2, Ordering::Release);
+
+            0
+        });
+
+        lt.add(|mut eg: Environment| {
+            let a = eg.a.load(Ordering::Acquire);
+            let b = eg.b.load(Ordering::Relaxed);
+
+            eg.fence(Ordering::Acquire);
+
+            let a_2 = eg.a.load(Ordering::Relaxed);
+
+            if a_2 == a && a != 1 {
+                b
+            } else {
+                0
+            }
+        });
+
+        lt.run()
+    }
+
+    // AcqRel does not provide the required guarantees according to the C++ memory model
+    // If an implementation generates an atomic CAS operation, it will incidentally work
+    // However, something like Load-Link/Store-Conditional could generate different barriers
+    // for load and store, meaning that a write may be reordered between them.
+    // The standard only guarantees Acquire on load, Release on store.
+    assert!(run_until(
+        || tiny_test(AcquireChainStrategy::AcqRelExchange),
+        vec![vec![0, 0], vec![0, 1], vec![0, 2]]
+    ));
+
+    // Regression test against previous release chain/fence bug
+    assert!(run_until(
+        || tiny_test(AcquireChainStrategy::StoreRelease),
+        vec![vec![0, 0], vec![0, 1], vec![0, 2]]
+    ));
+
+    // Should work correctly - no partial writes observed.
+    assert!(run_until(
+        || tiny_test(AcquireChainStrategy::WeakExchangeFence),
+        vec![vec![0, 0], vec![0, 2]]
+    ));
+}
