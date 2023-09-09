@@ -114,8 +114,8 @@ fn test_seqlock() {
     fn intel_failure_inner() -> Vec<usize> {
         let mut lt = LogTest::default();
 
-        lt.add(|mut eg: Environment| loop {
-            let version = eg.a.load(Ordering::Relaxed);
+        let write_fn = |mut eg: Environment| loop {
+            let version = eg.a.load(Ordering::Acquire);
             if version & 1 == 1 {
                 continue;
             }
@@ -126,12 +126,18 @@ fn test_seqlock() {
 
             eg.fence(Ordering::Release);
 
-            eg.b.store(1, Ordering::Relaxed);
-            eg.c.store(1, Ordering::Relaxed);
+            let old_b = eg.b.load(Ordering::Relaxed);
+            let old_c = eg.c.load(Ordering::Relaxed);
+
+            eg.b.store(old_b + 1, Ordering::Relaxed);
+            eg.c.store(old_c + 1, Ordering::Relaxed);
 
             eg.a.store(version + 2, Ordering::Release);
             return 0;
-        });
+        };
+
+        lt.add(write_fn);
+        lt.add(write_fn);
 
         lt.add(|mut eg: Environment| loop {
             let version = eg.a.load(Ordering::Acquire);
@@ -154,7 +160,12 @@ fn test_seqlock() {
         lt.run()
     }
 
-    assert!(run_until(intel_failure_inner, vec![vec![0, 0], vec![0, 2]]));
+    // Read should either see 0, 1 or 2 atomic writes
+    // Reading a partial write will result in an odd number
+    assert!(run_until(
+        intel_failure_inner,
+        vec![vec![0, 0, 0], vec![0, 0, 2], vec![0, 0, 4]]
+    ));
 }
 
 #[test]
