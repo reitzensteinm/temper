@@ -34,10 +34,13 @@ Related Work:
 Memlog simulates the Rust memory model (C++ 11 without Consume). Combined with operation reordering in Temper, its goal is full coverage. It contains a series of test cases dervied from [Preshing on Programming](https://preshing.com/), [C++ Concurrency in Action](https://www.amazon.com.au/C-Concurrency-Action-Practical-Multithreading/dp/1933988770), the [C++ Standard](https://en.cppreference.com/w/cpp/atomic/atomic_thread_fence), [blog posts](https://puzpuzpuz.dev/seqlock-based-atomic-memory-snapshots) and [many](https://stackoverflow.com/questions/47520748/c-memory-model-do-seq-cst-loads-synchronize-with-seq-cst-stores) [Stack](https://stackoverflow.com/questions/52606524/what-exact-rules-in-the-c-memory-model-prevent-reordering-before-acquire-opera) [Overflow](https://stackoverflow.com/questions/71509935/how-does-mixing-relaxed-and-acquire-release-accesses-on-the-same-atomic-variable) [questions](https://stackoverflow.com/questions/67693687/possible-orderings-with-memory-order-seq-cst-and-memory-order-release).
 
 Todo:
-* Detect [data races](https://en.cppreference.com/w/cpp/language/memory_model)
+* Detect [data races](https://en.cppreference.com/w/cpp/language/memory_model) in non-atomic datatypes
 * Expose API to declare what can be reordered
 * MESI protocol simulation
 * Locks
+* Seeded randomness
+* Reentry support for fetch_update
+* Support multiple datatypes
 
 ### Low Level
 
