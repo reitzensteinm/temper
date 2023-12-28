@@ -43,6 +43,29 @@ pub fn run_until<T: Clone + Eq + Hash + Debug, F: FnMut() -> T>(
     false
 }
 
+#[allow(unused)]
+pub fn run_until_pred<
+    T: Clone + Eq + Hash + Debug,
+    F: FnMut() -> T,
+    FP: Fn(&HashSet<T>) -> bool,
+>(
+    mut f: F,
+    verify: FP,
+) -> bool {
+    let mut res = HashSet::new();
+
+    for x in 0..10_000 {
+        res.insert(f());
+
+        if verify(&res) && x > 200 {
+            return true;
+        }
+    }
+
+    println!("Failed {:?}", res);
+    false
+}
+
 pub fn permutations(possible: Vec<Vec<usize>>) -> Vec<Vec<usize>> {
     let mut out = vec![vec![]];
 
