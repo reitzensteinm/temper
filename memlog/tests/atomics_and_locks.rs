@@ -57,10 +57,7 @@ fn test_2_5() {
         let mut lt = LogTest::default();
 
         lt.add(|mut eg: Environment| {
-            let v0 =
-                eg.a.fetch_update(|x| Some(x + 23), Ordering::Relaxed)
-                    .unwrap();
-
+            let v0 = eg.a.fetch_op(|x| x + 23, Ordering::Relaxed);
             let v1 = eg.a.load(Ordering::Relaxed);
 
             [v0, v1]
@@ -90,19 +87,13 @@ fn test_2_10_and_2_12() {
 
         // Broken allocate_id from 2.10
         let allocate_id = |eg: &mut Environment| {
+            // The use of logic in fetch_op here is _not_ something fetch_add etc can provide. But as it's simulating
+            // wrapping, it'll work for our purposes
             let id =
-                eg.a.fetch_update(
-                    |v| Some(if v == MAX_REPR { 0 } else { v + 1 }),
-                    Ordering::Relaxed,
-                )
-                .unwrap();
+                eg.a.fetch_op(|v| if v == MAX_REPR { 0 } else { v + 1 }, Ordering::Relaxed);
 
             if id > MAX_ID {
-                eg.a.fetch_update(
-                    |v| Some(if v == 0 { MAX_REPR } else { v - 1 }),
-                    Ordering::Relaxed,
-                )
-                .unwrap();
+                eg.a.fetch_op(|v| if v == 0 { MAX_REPR } else { v - 1 }, Ordering::Relaxed);
                 PANIC_ID
             } else {
                 id
@@ -111,15 +102,17 @@ fn test_2_10_and_2_12() {
 
         // Safe allocate_id from 2.12
         let allocate_id_safe = |eg: &mut Environment| {
+            let mut id = eg.a.load(Ordering::Relaxed);
             loop {
-                let id = eg.a.load(Ordering::Relaxed);
                 if id > MAX_ID {
                     return PANIC_ID;
                 } else {
-                    let new_id = id + 1;
-                    // Todo: Return read val with exchange_weak, allowing the load to be hoisted out of the loop
-                    if eg.a.exchange_weak(id, new_id, Ordering::Relaxed) {
-                        return new_id;
+                    match eg
+                        .a
+                        .exchange_weak(id, id + 1, Ordering::Relaxed, Ordering::Relaxed)
+                    {
+                        Ok(_) => return id,
+                        Err(v) => id = v,
                     }
                 }
             }
@@ -170,17 +163,18 @@ fn test_2_11() {
         let mut lt = LogTest::default();
 
         let increment = |eg: &mut Environment| {
-            // Todo: for exchange_weak
-            // let mut current = eg.a.load(Ordering::Relaxed);
+            let mut current = eg.a.load(Ordering::Relaxed);
 
             loop {
-                // Todo: Change loop to exchange_weak
-                if eg
+                let new = current + 1;
+
+                // Since we're in a loop, I'm using exchange_weak
+                match eg
                     .a
-                    .fetch_update(|v| Some(v + 1), Ordering::Relaxed)
-                    .is_ok()
+                    .exchange_weak(current, new, Ordering::Relaxed, Ordering::Relaxed)
                 {
-                    return;
+                    Ok(_) => return,
+                    Err(v) => current = v,
                 }
             }
         };
@@ -220,20 +214,20 @@ fn test_2_13() {
         };
 
         let get_key = move |eg: &mut Environment, random_seed| {
-            // Todo: Remove loop when compare_exchange signature is fixed
-            // Todo: Allow separate levels for success & failure on exchange_weak
-            loop {
-                let key = eg.a.load(Ordering::Relaxed);
+            let key = eg.a.load(Ordering::Relaxed);
 
-                if key == 0 {
-                    let new_key = generate_random_key(&random_seed);
+            if key == 0 {
+                let new_key = generate_random_key(&random_seed);
 
-                    if eg.a.exchange_weak(key, new_key, Ordering::Relaxed) {
-                        return new_key;
-                    }
-                } else {
-                    return key;
+                match eg
+                    .a
+                    .exchange(key, new_key, Ordering::Relaxed, Ordering::Relaxed)
+                {
+                    Ok(_) => new_key,
+                    Err(k) => k,
                 }
+            } else {
+                key
             }
         };
 
@@ -324,13 +318,11 @@ fn test_3_4() {
         let mut lt = LogTest::default();
 
         lt.add(|mut eg: Environment| {
-            eg.a.fetch_update(|v| Some(v + 5), Ordering::Relaxed)
-                .unwrap();
+            eg.a.fetch_op(|v| v + 5, Ordering::Relaxed);
             0
         });
         lt.add(|mut eg: Environment| {
-            eg.a.fetch_update(|v| Some(v + 10), Ordering::Relaxed)
-                .unwrap();
+            eg.a.fetch_op(|v| v + 10, Ordering::Relaxed);
             0
         });
 
@@ -395,8 +387,12 @@ fn test_3_8() {
         for _ in 0..THREAD_COUNT {
             lt.add(|mut eg: Environment| {
                 loop {
-                    // Todo: Update with exchange_weak ordering to Relaxed on failure
-                    if eg.a.exchange_weak(0, 1, Ordering::Acquire) {
+                    // This wasn't a weak exchange in the book - but we're putting it in a loop here
+                    if eg
+                        .a
+                        .exchange_weak(0, 1, Ordering::Acquire, Ordering::Relaxed)
+                        .is_ok()
+                    {
                         let old = eg.b.load(Ordering::Relaxed);
                         eg.b.store(old + 1, Ordering::Relaxed);
                         eg.a.store(0, Ordering::Release);
@@ -430,8 +426,7 @@ fn test_3_10() {
             eg.b.store(1, Ordering::SeqCst);
             if eg.a.load(Ordering::SeqCst) == 0 {
                 // Todo: Use nonatomic stores here for eg.c
-                eg.c.fetch_update(|v| Some(v + 1), Ordering::Relaxed)
-                    .unwrap();
+                eg.c.fetch_op(|v| v + 1, Ordering::Relaxed);
             }
 
             eg.c.load(Ordering::Relaxed)
@@ -440,8 +435,7 @@ fn test_3_10() {
         lt.add(|mut eg: Environment| {
             eg.a.store(1, Ordering::SeqCst);
             if eg.b.load(Ordering::SeqCst) == 0 {
-                eg.c.fetch_update(|v| Some(v + 1), Ordering::Relaxed)
-                    .unwrap();
+                eg.c.fetch_op(|v| v + 1, Ordering::Relaxed);
             }
 
             eg.c.load(Ordering::Relaxed)
@@ -468,8 +462,7 @@ fn test_3_11() {
             eg.b.store(1, Ordering::SeqCst);
             if eg.a.load(Ordering::SeqCst) == 0 {
                 // Todo: Use nonatomic stores here for eg.c
-                eg.c.fetch_update(|v| Some(v + 1), Ordering::Relaxed)
-                    .unwrap();
+                eg.c.fetch_op(|v| v + 1, Ordering::Relaxed);
             }
 
             eg.c.load(Ordering::Relaxed)
@@ -478,8 +471,7 @@ fn test_3_11() {
         lt.add(|mut eg: Environment| {
             eg.a.store(1, Ordering::SeqCst);
             if eg.b.load(Ordering::SeqCst) == 0 {
-                eg.c.fetch_update(|v| Some(v + 1), Ordering::Relaxed)
-                    .unwrap();
+                eg.c.fetch_op(|v| v + 1, Ordering::Relaxed);
             }
 
             eg.c.load(Ordering::Relaxed)

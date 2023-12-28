@@ -1,4 +1,4 @@
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -73,33 +73,42 @@ pub struct MemorySystem {
 }
 
 impl MemorySystem {
-    pub fn fetch_update<F: Fn(usize) -> Option<usize>>(
+    fn op<F: Fn(usize) -> Option<usize>>(
         &mut self,
         thread: usize,
         addr: usize,
         f: F,
-        level: Ordering,
+        success: Ordering,
+        failure: Ordering,
     ) -> Result<usize, usize> {
+        assert!(
+            failure == Ordering::SeqCst
+                || failure == Ordering::Acquire
+                || failure == Ordering::Relaxed
+        );
+
         let view = &mut self.threads[thread];
 
         let all_ops = std::iter::once(&self.acc[addr]).chain(self.log.iter());
 
         let choice: &MemoryOperation = all_ops.filter(|mo| mo.address == addr).last().unwrap();
 
-        let (load_ordering, store_ordering) = if level == Ordering::AcqRel {
+        let (load_ordering, store_ordering) = if success == Ordering::AcqRel {
             (Ordering::Acquire, Ordering::Release)
         } else {
-            (level, level)
+            (success, success)
         };
-
-        Self::read_synchronize(view, choice, load_ordering);
 
         let v = choice.value;
         let res = f(v);
 
         if res.is_none() {
+            Self::read_synchronize(view, choice, failure);
+
             return Err(v);
         }
+
+        Self::read_synchronize(view, choice, load_ordering);
 
         Self::write_synchronize(view, &mut self.global_sequence, addr, store_ordering);
 
@@ -123,9 +132,9 @@ impl MemorySystem {
 
         let seqs = if choice.level == Ordering::Relaxed {
             this_seqs
-        } else if level == Ordering::Release
-            || level == Ordering::AcqRel
-            || level == Ordering::SeqCst
+        } else if success == Ordering::Release
+            || success == Ordering::AcqRel
+            || success == Ordering::SeqCst
         {
             combined_seqs
         } else {
@@ -151,6 +160,86 @@ impl MemorySystem {
         });
 
         Ok(v)
+    }
+
+    // Used to implement fetch_add, fetch_sub etc
+    pub fn fetch_op<F: Fn(usize) -> usize>(
+        &mut self,
+        thread: usize,
+        addr: usize,
+        f: F,
+        level: Ordering,
+    ) -> usize {
+        // Relaxed is passed in for failure ordering - this operation can't fail
+        self.op(thread, addr, |v| Some(f(v)), level, Ordering::Relaxed)
+            .unwrap()
+    }
+
+    pub fn compare_exchange(
+        &mut self,
+        thread: usize,
+        addr: usize,
+        current: usize,
+        new: usize,
+        success: Ordering,
+        failure: Ordering,
+    ) -> Result<usize, usize> {
+        self.op(
+            thread,
+            addr,
+            |v| if v == current { Some(new) } else { None },
+            success,
+            failure,
+        )
+    }
+
+    pub fn compare_exchange_weak(
+        &mut self,
+        thread: usize,
+        addr: usize,
+        current: usize,
+        new: usize,
+        success: Ordering,
+        failure: Ordering,
+    ) -> Result<usize, usize> {
+        let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
+        let mut rng = ChaCha8Rng::seed_from_u64(s);
+
+        if rng.gen_bool(0.5) {
+            self.op(
+                thread,
+                addr,
+                |v| if v == current { Some(new) } else { None },
+                success,
+                failure,
+            )
+        } else {
+            Err(self.load(thread, addr, failure))
+        }
+    }
+
+    pub fn fetch_update<F: Fn(usize) -> Option<usize>>(
+        &mut self,
+        thread: usize,
+        addr: usize,
+        f: F,
+        set_order: Ordering,
+        fetch_order: Ordering,
+    ) -> Result<usize, usize> {
+        loop {
+            let current = self.load(thread, addr, fetch_order);
+            match f(current) {
+                None => return Err(current),
+                Some(new) => {
+                    if self
+                        .compare_exchange_weak(thread, addr, current, new, set_order, fetch_order)
+                        .is_ok()
+                    {
+                        return Ok(current);
+                    }
+                }
+            }
+        }
     }
 
     pub fn fence(&mut self, thread: usize, level: Ordering) {

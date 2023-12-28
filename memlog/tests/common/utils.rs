@@ -12,6 +12,7 @@ pub const ALL_ORDERINGS: [Ordering; 5] = [
     Ordering::AcqRel,
 ];
 
+#[allow(unused)]
 fn check_set<T: Clone + Eq + Hash>(hs: &HashSet<T>, arr: &[T]) -> bool {
     let mut ns = HashSet::new();
     for x in arr {
@@ -20,6 +21,7 @@ fn check_set<T: Clone + Eq + Hash>(hs: &HashSet<T>, arr: &[T]) -> bool {
     ns == *hs
 }
 
+#[allow(unused)]
 pub fn run_until<T: Clone + Eq + Hash + Debug, F: FnMut() -> T>(
     mut f: F,
     expected: Vec<T>,

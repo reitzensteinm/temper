@@ -68,18 +68,14 @@ fn explanation_relaxed_increment() {
 
     lt.add(move |mut eg: Environment| {
         for _ in 0..50 {
-            // Todo: Fetch update never fails!
-            eg.a.fetch_update(|v| Some(v + 1), Ordering::Relaxed)
-                .unwrap();
+            eg.a.fetch_op(|v| v + 1, Ordering::Relaxed);
         }
         eg.a.load(Ordering::Relaxed)
     });
 
     lt.add(move |mut eg: Environment| {
         for _ in 0..50 {
-            // Todo: Fetch update never fails!
-            eg.a.fetch_update(|v| Some(v + 1), Ordering::Relaxed)
-                .unwrap();
+            eg.a.fetch_op(|v| v + 1, Ordering::Relaxed);
         }
         eg.a.load(Ordering::Relaxed)
     });
@@ -127,7 +123,11 @@ fn release_acquire_three_threads() {
 
         lt.add(move |mut eg: Environment| {
             // Any RMW continues the release chain
-            while !eg.b.exchange_weak(1, 2, Ordering::Relaxed) {}
+            while eg
+                .b
+                .exchange_weak(1, 2, Ordering::Relaxed, Ordering::Relaxed)
+                .is_err()
+            {}
             // Continue the release chain without necessarily seeing the store to a
             eg.a.load(Ordering::Relaxed)
         });
@@ -259,12 +259,7 @@ fn sto_happens_before() {
         });
 
         lt.add(move |mut eg: Environment| {
-            let a = loop {
-                if let Ok(v) = eg.b.fetch_update(|v| Some(v + 1), Ordering::SeqCst) {
-                    break v;
-                }
-            };
-
+            let a = eg.b.fetch_op(|v| v + 1, Ordering::SeqCst);
             let b = eg.b.load(Ordering::Relaxed);
 
             a + b
