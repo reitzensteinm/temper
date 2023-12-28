@@ -83,6 +83,7 @@ pub struct Environment {
     pub a: Value,
     pub b: Value,
     pub c: Value,
+    pub d: Value,
 }
 
 impl Environment {
@@ -142,6 +143,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
             a: build_value(),
             b: build_value(),
             c: build_value(),
+            d: build_value(),
         };
 
         Thread {
@@ -200,7 +202,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     #[allow(unused)]
     pub fn run(&mut self) -> Vec<T> {
         let ms = Arc::new(Mutex::new(MemorySystem::default()));
-        ms.lock().unwrap().malloc(3);
+        ms.lock().unwrap().malloc(4);
 
         let mut threads = vec![];
 
@@ -215,7 +217,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     #[allow(unused)]
     pub fn run_sequential(&mut self) -> Vec<T> {
         let ms = Arc::new(Mutex::new(MemorySystem::default()));
-        ms.lock().unwrap().malloc(3);
+        ms.lock().unwrap().malloc(4);
 
         let mut results = vec![];
 
