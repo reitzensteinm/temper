@@ -43,26 +43,48 @@ impl Value {
     pub fn fetch_update<F: Fn(usize) -> Option<usize>>(
         &mut self,
         f: F,
-        ordering: Ordering,
+        set_order: Ordering,
+        fetch_order: Ordering,
     ) -> Result<usize, usize> {
         self.wait();
         let mut mem = self.memory.lock().unwrap();
-        mem.fetch_update(self.thread, self.addr, f, ordering)
+        mem.fetch_update(self.thread, self.addr, f, set_order, fetch_order)
     }
 
     #[allow(unused)]
-    pub fn exchange_weak(&mut self, old: usize, new: usize, ordering: Ordering) -> bool {
+    pub fn exchange_weak(
+        &mut self,
+        old: usize,
+        new: usize,
+        success: Ordering,
+        failure: Ordering,
+    ) -> Result<usize, usize> {
         self.wait();
         let mut mem = self.memory.lock().unwrap();
-        let f = |v| {
-            if v == old {
-                Some(new)
-            } else {
-                None
-            }
-        };
-        mem.fetch_update(self.thread, self.addr, f, ordering)
-            .is_ok()
+
+        mem.compare_exchange_weak(self.thread, self.addr, old, new, success, failure)
+    }
+
+    #[allow(unused)]
+    pub fn exchange(
+        &mut self,
+        old: usize,
+        new: usize,
+        success: Ordering,
+        failure: Ordering,
+    ) -> Result<usize, usize> {
+        self.wait();
+        let mut mem = self.memory.lock().unwrap();
+
+        mem.compare_exchange(self.thread, self.addr, old, new, success, failure)
+    }
+
+    // Used for fetch_add, fetch_sub, etc
+    #[allow(unused)]
+    pub fn fetch_op<F: Fn(usize) -> usize>(&mut self, f: F, ordering: Ordering) -> usize {
+        self.wait();
+        let mut mem = self.memory.lock().unwrap();
+        mem.fetch_op(self.thread, self.addr, f, ordering)
     }
 
     pub fn load(&mut self, ordering: Ordering) -> usize {

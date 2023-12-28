@@ -44,12 +44,14 @@ fn test_exchange() {
         let mut lt = LogTest::default();
 
         lt.add(|mut eg: Environment| {
-            eg.a.exchange_weak(0, 1, Ordering::AcqRel);
+            let _ =
+                eg.a.exchange_weak(0, 1, Ordering::AcqRel, Ordering::Acquire);
             eg.b.load(Ordering::Relaxed)
         });
 
         lt.add(|mut eg: Environment| {
-            eg.b.exchange_weak(0, 1, Ordering::AcqRel);
+            let _ =
+                eg.b.exchange_weak(0, 1, Ordering::AcqRel, Ordering::Acquire);
             eg.a.load(Ordering::Relaxed)
         });
 

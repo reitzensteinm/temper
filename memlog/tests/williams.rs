@@ -230,7 +230,7 @@ fn test_5_11() {
         });
 
         lt.add(move |mut eg: Environment| {
-            eg.b.exchange_weak(1, 1, exchange_order);
+            let _ = eg.b.exchange_weak(1, 1, exchange_order, Ordering::Relaxed);
             0
         });
 

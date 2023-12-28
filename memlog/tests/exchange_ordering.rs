@@ -15,7 +15,11 @@ If you're looking to find bugs in this project, this is not a bad place.
 
 #[test]
 fn release_acquire_three_threads() {
-    fn inner(first_order: Ordering, second_order: Ordering) -> Vec<usize> {
+    fn inner(
+        first_order: Ordering,
+        second_order: Ordering,
+        second_order_failure: Ordering,
+    ) -> Vec<usize> {
         let mut lt = LogTest::default();
 
         lt.add(move |mut eg: Environment| {
@@ -27,7 +31,11 @@ fn release_acquire_three_threads() {
         lt.add(move |mut eg: Environment| {
             // Any RMW continues the release chain
             eg.c.store(10, Ordering::Relaxed);
-            while !eg.b.exchange_weak(1, 2, second_order) {}
+            while eg
+                .b
+                .exchange_weak(1, 2, second_order, second_order_failure)
+                .is_err()
+            {}
             // Continue the release chain without necessarily seeing the store to a
             eg.a.load(Ordering::Relaxed)
         });
@@ -40,15 +48,21 @@ fn release_acquire_three_threads() {
         lt.run()
     }
 
-    fn check(first_order: Ordering, second_order: Ordering, vals: Vec<Vec<usize>>) {
+    fn check(
+        first_order: Ordering,
+        second_order: Ordering,
+        second_order_failure: Ordering,
+        vals: Vec<Vec<usize>>,
+    ) {
         assert!(run_until(
-            || inner(first_order, second_order),
+            || inner(first_order, second_order, second_order_failure),
             permutations(vals)
         ));
     }
 
     // Regardless of second thread ordering, no release on the first thread means all bets are off
     check(
+        Ordering::Relaxed,
         Ordering::Relaxed,
         Ordering::Relaxed,
         vec![vec![0], vec![0, 1], vec![0, 1, 10, 11]],
@@ -58,6 +72,7 @@ fn release_acquire_three_threads() {
     check(
         Ordering::Relaxed,
         Ordering::Release,
+        Ordering::Relaxed,
         vec![vec![0], vec![0, 1], vec![10, 11]],
     );
 
@@ -67,6 +82,7 @@ fn release_acquire_three_threads() {
     check(
         Ordering::Release,
         Ordering::Relaxed,
+        Ordering::Relaxed,
         vec![vec![0], vec![0, 1], vec![1, 11]],
     );
 
@@ -74,6 +90,7 @@ fn release_acquire_three_threads() {
     check(
         Ordering::Release,
         Ordering::Release,
+        Ordering::Relaxed,
         vec![vec![0], vec![0, 1], vec![11]],
     );
 
@@ -82,6 +99,7 @@ fn release_acquire_three_threads() {
     check(
         Ordering::Release,
         Ordering::Acquire,
+        Ordering::Acquire,
         vec![vec![0], vec![1], vec![1, 11]],
     );
 
@@ -89,12 +107,14 @@ fn release_acquire_three_threads() {
     check(
         Ordering::Release,
         Ordering::AcqRel,
+        Ordering::Acquire,
         vec![vec![0], vec![1], vec![11]],
     );
 
     // All threads should see all stores
     check(
         Ordering::Release,
+        Ordering::SeqCst,
         Ordering::SeqCst,
         vec![vec![0], vec![1], vec![11]],
     );
@@ -120,7 +140,11 @@ fn test_seqlock() {
                 continue;
             }
 
-            if !eg.a.exchange_weak(version, version + 1, Ordering::Relaxed) {
+            if eg
+                .a
+                .exchange_weak(version, version + 1, Ordering::Relaxed, Ordering::Relaxed)
+                .is_err()
+            {
                 continue;
             }
 
@@ -183,14 +207,22 @@ fn acquire_chain_test() {
             match strategy {
                 AcquireChainStrategy::WeakExchangeFence => {
                     // Fence is required for correctness
-                    while !eg.a.exchange_weak(0, 1, Ordering::Relaxed) {}
+                    while eg
+                        .a
+                        .exchange_weak(0, 1, Ordering::Relaxed, Ordering::Relaxed)
+                        .is_err()
+                    {}
                     eg.fence(Ordering::Release);
                 }
                 AcquireChainStrategy::AcqRelExchange => {
                     // AcqRel only guarantees Acquire on load, Release on store.
                     // Relaxed stores below are _not_ guaranteed to not be reordered before this store
                     // See https://en.cppreference.com/w/cpp/atomic/memory_order - memory_order_acq_rel
-                    while !eg.a.exchange_weak(0, 1, Ordering::AcqRel) {}
+                    while eg
+                        .a
+                        .exchange_weak(0, 1, Ordering::AcqRel, Ordering::Acquire)
+                        .is_err()
+                    {}
                 }
                 AcquireChainStrategy::StoreRelease => {
                     // Isn't even an edge case. This should obviously not work.
