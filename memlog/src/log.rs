@@ -152,7 +152,7 @@ impl MemorySystem {
             thread_sequence: view.sequence,
             global_sequence: self.global_sequence,
             source_fence_sequence: fence_sequence,
-            level,
+            level: store_ordering,
             release_chain,
             source_sequence: seqs.0,
             address: addr,
