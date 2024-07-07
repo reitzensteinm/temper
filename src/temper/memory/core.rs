@@ -22,7 +22,7 @@ pub enum MemoryOpType {
 }
 
 thread_local! {
-    pub static MODEL: Mutex<Option<MemoryModel>> = Mutex::new(None);
+    pub static MODEL: Mutex<Option<MemoryModel>> = const { Mutex::new(None) };
 }
 
 pub fn get_model() -> Option<MemoryModel> {
