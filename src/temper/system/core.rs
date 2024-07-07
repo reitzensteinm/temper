@@ -16,7 +16,7 @@ pub struct SystemInfo {
 }
 
 thread_local! {
-    pub static SYSTEM: Mutex<Option<SystemInfo>> = Mutex::new(None);
+    pub static SYSTEM: Mutex<Option<SystemInfo>> = const { Mutex::new(None) };
 }
 
 pub fn with_system<T, F: FnOnce(&SystemInfo) -> T>(f: F) -> T {
