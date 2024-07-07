@@ -10,7 +10,6 @@ pub struct ThreadState {
     pub finished: bool,
     pub waiting: bool,
     pub barrier: Arc<Barrier>,
-    pub position: usize,
 }
 
 impl ThreadState {
@@ -100,6 +99,7 @@ impl Value {
     }
 }
 
+#[allow(unused)]
 pub struct Environment {
     pub thread_state: Arc<Mutex<ThreadState>>,
     pub a: Value,
@@ -144,7 +144,6 @@ impl<T: Copy + Send + 'static> LogTest<T> {
             finished: false,
             waiting: false,
             barrier: Arc::new(Barrier::new(2)),
-            position: 0,
         }));
 
         let mut addr = 0;
