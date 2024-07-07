@@ -45,6 +45,7 @@ pub fn run_until<T: Clone + Eq + Hash + Debug, F: FnMut() -> T>(
     false
 }
 
+// Todo: is run until pred really what we want here? Probably more like verify_holds_true
 #[allow(unused)]
 pub fn run_until_pred<
     T: Clone + Eq + Hash + Debug,
@@ -56,7 +57,7 @@ pub fn run_until_pred<
 ) -> bool {
     let mut res = HashSet::new();
 
-    for x in 0..10_000 {
+    for x in 0..300 {
         res.insert(f());
 
         if verify(&res) && x > 200 {

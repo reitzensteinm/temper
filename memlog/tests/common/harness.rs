@@ -107,6 +107,7 @@ pub struct Environment {
     pub c: Value,
     pub d: Value,
     pub e: Value,
+    pub arr: Vec<Value>,
 }
 
 impl Environment {
@@ -167,6 +168,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
             c: build_value(),
             d: build_value(),
             e: build_value(),
+            arr: (0..100).map(|_| build_value()).collect(),
         };
 
         Thread {
@@ -225,7 +227,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     #[allow(unused)]
     pub fn run(&mut self) -> Vec<T> {
         let ms = Arc::new(Mutex::new(MemorySystem::default()));
-        ms.lock().unwrap().malloc(5);
+        ms.lock().unwrap().malloc(105);
 
         let mut threads = vec![];
 
