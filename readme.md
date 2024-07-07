@@ -26,7 +26,8 @@ Related Work:
 * TigerBeetle's [fault injection](https://www.youtube.com/watch?v=BH2jvJ74npM) testing
 * [Loom](https://github.com/tokio-rs/loom), which exhaustively tests on a single node
 * [Timecraft](https://github.com/stealthrocket/timecraft), a distributed system testing tool for WebAssembly
-* [Coyote](https://microsoft.github.io/coyote), a 
+* [Coyote](https://microsoft.github.io/coyote), a similar project for the .Net runtime
+* [Antithesis](https://antithesis.com/), a deterministic hypervisor that can test arbitrary software
 
 ## Components
 
