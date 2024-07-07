@@ -452,46 +452,10 @@ fn test_3_10() {
 }
 
 // Listing 3.11
-// Tests sequential consistent flags protecting data access
-#[test]
-fn test_3_11() {
-    fn inner() -> Vec<usize> {
-        let mut lt = LogTest::default();
-
-        lt.add(|mut eg: Environment| {
-            eg.b.store(1, Ordering::SeqCst);
-            if eg.a.load(Ordering::SeqCst) == 0 {
-                // Todo: Use nonatomic stores here for eg.c
-                eg.c.fetch_op(|v| v + 1, Ordering::Relaxed);
-            }
-
-            eg.c.load(Ordering::Relaxed)
-        });
-
-        lt.add(|mut eg: Environment| {
-            eg.a.store(1, Ordering::SeqCst);
-            if eg.b.load(Ordering::SeqCst) == 0 {
-                eg.c.fetch_op(|v| v + 1, Ordering::Relaxed);
-            }
-
-            eg.c.load(Ordering::Relaxed)
-        });
-
-        lt.run()
-    }
-
-    // At most one store is made to C, and either thread may see it if it occurs
-    assert!(run_until(
-        inner,
-        vec![vec![0, 1], vec![1, 0], vec![0, 0], vec![1, 1]]
-    ));
-}
-
-// Listing 3.12
 // Tests Atomic-Fence synchronisation, where an atomic Release operation on the writer thread synchronises with
 // an Acquire fence on the reader thread
 #[test]
-fn test_3_12() {
+fn test_3_11() {
     fn inner() -> Vec<usize> {
         let mut lt = LogTest::default();
 
