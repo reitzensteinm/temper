@@ -140,36 +140,3 @@ fn test_queue_runner() {
         vec![vec![expected]]
     ));
 }
-
-/*use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering::Relaxed;
-use std::sync::Arc;
-use threadpool::ThreadPool;*/
-#[test]
-#[cfg(feature = "perf")]
-fn test_queue_perf() {
-    for x in 1..=16 {
-        let start = Utc::now();
-        let n_workers = x;
-        let pool = ThreadPool::new(n_workers);
-
-        let num = 1000;
-        let fin = Arc::new(AtomicUsize::new(0));
-
-        for _ in 0..num {
-            let fin = fin.clone();
-            pool.execute(move || {
-                test_queue();
-                fin.fetch_add(1, Relaxed);
-            });
-        }
-
-        pool.join();
-
-        while fin.load(Relaxed) != num {
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
-
-        println!("{} {}", x, Utc::now() - start);
-    }
-}
