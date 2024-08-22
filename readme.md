@@ -28,6 +28,15 @@ Related Work:
 * [Timecraft](https://github.com/stealthrocket/timecraft), a distributed system testing tool for WebAssembly
 * [Coyote](https://microsoft.github.io/coyote), a similar project for the .Net runtime
 * [Antithesis](https://antithesis.com/), a deterministic hypervisor that can test arbitrary software
+* [Turmoil](https://github.com/tokio-rs/turmoil), a testing framework for Tokio that also does network fault injection
+* FrostDB's [testing strategy](https://www.polarsignals.com/blog/posts/2024/05/28/mostly-dst-in-go), compiling Go to
+  WASM
+
+Reading:
+
+* [Files are fraught with peril](https://danluu.com/deconstruct-files/) by Dan Luu
+* [What's the big deal about Deterministic Simulation Testing?](https://notes.eatonphil.com/2024-08-20-deterministic-simulation-testing.html)
+  by Phil Eaton
 
 ## Components
 
