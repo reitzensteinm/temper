@@ -369,7 +369,8 @@ impl MemorySystem {
             latest_seq_cst_op.max(*latest_fence_op)
         } else {
             // A seq_cst fence on this thread causes the latest prior seq_cst store to be the minimum
-            seq_cst_ops.rfind(|mo| mo.global_sequence < view.min_seq_cst_sequence)
+            seq_cst_ops
+                .rfind(|mo| mo.global_sequence < view.min_seq_cst_sequence)
                 .map(|v| v.global_sequence)
                 .unwrap_or(0_usize)
         };
