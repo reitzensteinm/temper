@@ -1,9 +1,18 @@
-use memlog::log::MemorySystem;
+use memlog::backend::MemorySystem;
 use std::hint::black_box;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 const ITERATION_COUNTS: [usize; 4] = [10, 100, 1_000, 10_000];
+
+#[cfg(feature = "rc11")]
+const BACKEND: &str = "rc11";
+
+#[cfg(all(feature = "memgraph", not(feature = "rc11")))]
+const BACKEND: &str = "memgraph";
+
+#[cfg(not(feature = "memgraph"))]
+const BACKEND: &str = "log";
 
 struct BenchResult {
     name: &'static str,
@@ -37,7 +46,7 @@ fn main() {
         },
     ];
 
-    println!("backend: memlog");
+    println!("backend: {BACKEND}");
     println!("iterations: {}", format_iterations(&ITERATION_COUNTS));
     println!("case,iterations,total_ms,ns_per_iter,checksum");
 

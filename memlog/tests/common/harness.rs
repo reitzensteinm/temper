@@ -1,4 +1,4 @@
-use memlog::log::MemorySystem;
+use memlog::backend::MemorySystem;
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::atomic::Ordering;
