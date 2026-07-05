@@ -194,7 +194,7 @@ fn rc11_forbids_two_plus_two_w() {
 //
 // Current memlog forbids it because an SC load cannot read before an SC store
 // to the same address once that store is present in the global operation log.
-#[cfg(not(feature = "memgraph"))]
+#[cfg(not(feature = "graph"))]
 #[test]
 fn memlog_forbids_rc11_iriw_acq_sc() {
     fn inner() -> Vec<usize> {
@@ -232,7 +232,7 @@ fn memlog_forbids_rc11_iriw_acq_sc() {
 
 // This is the RC11 expectation for the same litmus test above. The original
 // log backend models the older C++11 behavior and forbids this result, but the
-// `rc11` feature enables memgraph and allows it by checking the SC event graph
+// `rc11` feature enables graph and allows it by checking the SC event graph
 // instead of requiring SC loads to observe the latest SC store to the same
 // address.
 #[test]
@@ -286,7 +286,7 @@ fn rc11_allows_iriw_acq_sc() {
 //       a = x.load(SeqCst)         // 0
 //
 // RC11-allowed outcome: [T0, b * 10 + c, a] = [0, 13, 0].
-#[cfg(not(feature = "memgraph"))]
+#[cfg(not(feature = "graph"))]
 #[test]
 fn memlog_forbids_rc11_z6_u() {
     fn inner() -> Vec<usize> {

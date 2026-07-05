@@ -32,12 +32,12 @@ store but not the other's, which no interleaving can produce.
         d = x.load(SeqCst)  // 0
     T3: y.store(1, SeqCst)
 
-The log backend does not currently simulate this outcome; memgraph does.
+The log backend does not currently simulate this outcome; graph does.
 */
 
 #[test]
 #[cfg_attr(
-    not(feature = "memgraph"),
+    not(feature = "graph"),
     ignore = "current log backend is stricter than C++20 for IRIW-acq-sc"
 )]
 fn cxx20_allows_iriw_acq_sc() {
@@ -98,12 +98,12 @@ T1 through the RMW, but that no longer forces x's store into the SC order.
     T2: y.store(3, SeqCst)
         a = x.load(SeqCst)         // 0
 
-The log backend does not currently simulate this outcome; memgraph does.
+The log backend does not currently simulate this outcome; graph does.
 */
 
 #[test]
 #[cfg_attr(
-    not(feature = "memgraph"),
+    not(feature = "graph"),
     ignore = "current log backend is stricter than C++20 for Z6.U"
 )]
 fn cxx20_allows_z6_u() {

@@ -1,4 +1,4 @@
 pub mod backend;
+#[cfg(feature = "graph")]
+pub mod graph;
 pub mod log;
-#[cfg(feature = "memgraph")]
-pub mod memgraph;

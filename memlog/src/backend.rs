@@ -1,6 +1,6 @@
+#[cfg(feature = "graph")]
+use crate::graph;
 use crate::log;
-#[cfg(feature = "memgraph")]
-use crate::memgraph;
 use std::sync::atomic::Ordering;
 
 pub trait MemoryBackend: Send {
@@ -131,18 +131,30 @@ macro_rules! impl_memory_backend {
 
 impl_memory_backend!(log, "log");
 
-#[cfg(feature = "memgraph")]
-impl_memory_backend!(memgraph, "memgraph");
+#[cfg(feature = "graph")]
+impl_memory_backend!(graph, "graph");
 
 pub fn create_all() -> Vec<Box<dyn MemoryBackend>> {
-    let mut backends = vec![create_default()];
-
-    #[cfg(feature = "memgraph")]
-    backends.push(Box::new(memgraph::MemorySystem::default()));
+    let mut backends: Vec<Box<dyn MemoryBackend>> = vec![Box::new(log::MemorySystem::default())];
+    add_optional_backends(&mut backends);
 
     backends
 }
 
+#[cfg(feature = "graph")]
+fn add_optional_backends(backends: &mut Vec<Box<dyn MemoryBackend>>) {
+    backends.push(Box::new(graph::MemorySystem::default()));
+}
+
+#[cfg(not(feature = "graph"))]
+fn add_optional_backends(_backends: &mut Vec<Box<dyn MemoryBackend>>) {}
+
+#[cfg(feature = "graph")]
+pub fn create_default() -> Box<dyn MemoryBackend> {
+    Box::new(graph::MemorySystem::default())
+}
+
+#[cfg(not(feature = "graph"))]
 pub fn create_default() -> Box<dyn MemoryBackend> {
     Box::new(log::MemorySystem::default())
 }
