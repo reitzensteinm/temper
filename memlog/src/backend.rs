@@ -1,7 +1,7 @@
 use crate::log;
 use std::sync::atomic::Ordering;
 
-pub trait MemoryBackend {
+pub trait MemoryBackend: Send {
     fn name(&self) -> &'static str;
 
     fn add_thread(&mut self) -> usize;
@@ -139,11 +139,16 @@ impl BackendConstructor {
     }
 }
 
+const LOG_BACKEND: BackendConstructor = BackendConstructor::new("log", construct_log_backend);
+
 pub fn available_backends() -> &'static [BackendConstructor] {
-    static BACKENDS: &[BackendConstructor] =
-        &[BackendConstructor::new("log", construct_log_backend)];
+    static BACKENDS: &[BackendConstructor] = &[LOG_BACKEND];
 
     BACKENDS
+}
+
+pub fn create_default() -> Box<dyn MemoryBackend> {
+    LOG_BACKEND.construct()
 }
 
 fn construct_log_backend() -> Box<dyn MemoryBackend> {
