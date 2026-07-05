@@ -1,10 +1,16 @@
-use memlog::log::MemorySystem;
+use memlog::backend::{create_default, MemoryBackend};
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
+
+type SharedMemory = Arc<Mutex<Box<dyn MemoryBackend>>>;
+
+fn create_test_memory() -> SharedMemory {
+    Arc::new(Mutex::new(create_default()))
+}
 
 pub struct ThreadState {
     pub finished: bool,
@@ -30,7 +36,7 @@ pub struct Value {
     pub thread: usize,
     pub addr: usize,
     pub thread_state: Arc<Mutex<ThreadState>>,
-    pub memory: Arc<Mutex<MemorySystem>>,
+    pub memory: SharedMemory,
 }
 
 impl Value {
@@ -47,7 +53,7 @@ impl Value {
     ) -> Result<usize, usize> {
         self.wait();
         let mut mem = self.memory.lock().unwrap();
-        mem.fetch_update(self.thread, self.addr, f, set_order, fetch_order)
+        mem.fetch_update(self.thread, self.addr, &f, set_order, fetch_order)
     }
 
     #[allow(unused)]
@@ -83,7 +89,7 @@ impl Value {
     pub fn fetch_op<F: Fn(usize) -> usize>(&mut self, f: F, ordering: Ordering) -> usize {
         self.wait();
         let mut mem = self.memory.lock().unwrap();
-        mem.fetch_op(self.thread, self.addr, f, ordering)
+        mem.fetch_op(self.thread, self.addr, &f, ordering)
     }
 
     pub fn load(&mut self, ordering: Ordering) -> usize {
@@ -134,7 +140,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     }
 
     pub fn spawn_thread<F: FnMut(Environment) -> T + Send + 'static + Sized>(
-        ms: Arc<Mutex<MemorySystem>>,
+        ms: SharedMemory,
         i: usize,
         mut f: F,
     ) -> Thread<T> {
@@ -224,7 +230,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     // Runs all threads randomly interleaved
     #[allow(unused)]
     pub fn run(&mut self) -> Vec<T> {
-        let ms = Arc::new(Mutex::new(MemorySystem::default()));
+        let ms = create_test_memory();
         ms.lock().unwrap().malloc(5);
 
         let mut threads = vec![];
@@ -239,7 +245,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     // Runs Thread A fully, then Thread B, etc
     #[allow(unused)]
     pub fn run_sequential(&mut self) -> Vec<T> {
-        let ms = Arc::new(Mutex::new(MemorySystem::default()));
+        let ms = create_test_memory();
         ms.lock().unwrap().malloc(5);
 
         let mut results = vec![];
