@@ -1,4 +1,4 @@
-use memlog::backend::{create_default, MemoryBackend};
+use memlog::backend::{create_all, MemoryBackend};
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::atomic::Ordering;
@@ -7,6 +7,17 @@ use std::thread;
 use std::thread::JoinHandle;
 
 type SharedMemory = Arc<Mutex<Box<dyn MemoryBackend>>>;
+
+fn create_test_memory() -> SharedMemory {
+    let mut backends = create_all();
+    assert_eq!(
+        backends.len(),
+        1,
+        "LogTest result shape needs updating before running multiple backends"
+    );
+
+    Arc::new(Mutex::new(backends.remove(0)))
+}
 
 pub struct ThreadState {
     pub finished: bool,
@@ -226,7 +237,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     // Runs all threads randomly interleaved
     #[allow(unused)]
     pub fn run(&mut self) -> Vec<T> {
-        let ms = Arc::new(Mutex::new(create_default()));
+        let ms = create_test_memory();
         ms.lock().unwrap().malloc(5);
 
         let mut threads = vec![];
@@ -241,7 +252,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     // Runs Thread A fully, then Thread B, etc
     #[allow(unused)]
     pub fn run_sequential(&mut self) -> Vec<T> {
-        let ms = Arc::new(Mutex::new(create_default()));
+        let ms = create_test_memory();
         ms.lock().unwrap().malloc(5);
 
         let mut results = vec![];

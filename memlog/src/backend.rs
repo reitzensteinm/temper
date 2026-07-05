@@ -119,40 +119,8 @@ impl MemoryBackend for log::MemorySystem {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct BackendConstructor {
-    name: &'static str,
-    construct: fn() -> Box<dyn MemoryBackend>,
-}
-
-impl BackendConstructor {
-    pub const fn new(name: &'static str, construct: fn() -> Box<dyn MemoryBackend>) -> Self {
-        BackendConstructor { name, construct }
-    }
-
-    pub fn name(&self) -> &'static str {
-        self.name
-    }
-
-    pub fn construct(&self) -> Box<dyn MemoryBackend> {
-        (self.construct)()
-    }
-}
-
-const LOG_BACKEND: BackendConstructor = BackendConstructor::new("log", construct_log_backend);
-
-pub fn available_backends() -> &'static [BackendConstructor] {
-    static BACKENDS: &[BackendConstructor] = &[LOG_BACKEND];
-
-    BACKENDS
-}
-
-pub fn create_default() -> Box<dyn MemoryBackend> {
-    LOG_BACKEND.construct()
-}
-
-fn construct_log_backend() -> Box<dyn MemoryBackend> {
-    Box::new(log::MemorySystem::default())
+pub fn create_all() -> Vec<Box<dyn MemoryBackend>> {
+    vec![Box::new(log::MemorySystem::default())]
 }
 
 pub type MemorySystem = log::MemorySystem;

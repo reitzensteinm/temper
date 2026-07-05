@@ -1,4 +1,4 @@
-use memlog::backend::{available_backends, MemoryBackend};
+use memlog::backend::{create_all, MemoryBackend};
 use std::hint::black_box;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -41,11 +41,10 @@ fn main() {
     println!("iterations: {}", format_iterations(&ITERATION_COUNTS));
     println!("backend,case,iterations,total_ms,ns_per_iter,checksum");
 
-    for backend in available_backends() {
-        for iterations in ITERATION_COUNTS {
-            for case in &cases {
-                let mut memory = backend.construct();
-                let result = run(backend.name(), memory.as_mut(), iterations, case);
+    for iterations in ITERATION_COUNTS {
+        for case in &cases {
+            for mut memory in create_all() {
+                let result = run(memory.name(), memory.as_mut(), iterations, case);
                 let ns_per_iter = result.elapsed.as_nanos() as f64 / result.iterations as f64;
 
                 println!(
