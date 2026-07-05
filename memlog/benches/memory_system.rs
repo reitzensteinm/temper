@@ -1,4 +1,4 @@
-use memlog::log::MemorySystem;
+use memlog::backend::{MemorySystem, NAME as BACKEND_NAME};
 use std::hint::black_box;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -37,7 +37,7 @@ fn main() {
         },
     ];
 
-    println!("backend: memlog");
+    println!("backend: {BACKEND_NAME}");
     println!("iterations: {}", format_iterations(&ITERATION_COUNTS));
     println!("case,iterations,total_ms,ns_per_iter,checksum");
 
