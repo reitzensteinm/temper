@@ -3,6 +3,9 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::atomic::Ordering;
 
+const MIN_RUNS: usize = 200;
+const MAX_RUNS: usize = 10_000;
+
 #[allow(unused)]
 pub const ALL_ORDERINGS: [Ordering; 5] = [
     Ordering::Relaxed,
@@ -28,10 +31,10 @@ pub fn run_until<T: Clone + Eq + Hash + Debug, F: FnMut() -> T>(
 ) -> bool {
     let mut res = HashSet::new();
 
-    for x in 0..10_000 {
+    for x in 0..MAX_RUNS {
         res.insert(f());
 
-        if check_set(&res, &expected) && x > 200 {
+        if check_set(&res, &expected) && x > MIN_RUNS {
             return true;
         }
 
@@ -56,10 +59,10 @@ pub fn run_until_pred<
 ) -> bool {
     let mut res = HashSet::new();
 
-    for x in 0..10_000 {
+    for x in 0..MAX_RUNS {
         res.insert(f());
 
-        if verify(&res) && x > 200 {
+        if verify(&res) && x > MIN_RUNS {
             return true;
         }
     }
