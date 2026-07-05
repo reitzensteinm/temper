@@ -1,4 +1,4 @@
-use memlog::backend::{create_all, MemoryBackend};
+use memlog::backend::{create_default, MemoryBackend};
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::atomic::Ordering;
@@ -9,14 +9,7 @@ use std::thread::JoinHandle;
 type SharedMemory = Arc<Mutex<Box<dyn MemoryBackend>>>;
 
 fn create_test_memory() -> SharedMemory {
-    let mut backends = create_all();
-    assert_eq!(
-        backends.len(),
-        1,
-        "LogTest result shape needs updating before running multiple backends"
-    );
-
-    Arc::new(Mutex::new(backends.remove(0)))
+    Arc::new(Mutex::new(create_default()))
 }
 
 pub struct ThreadState {

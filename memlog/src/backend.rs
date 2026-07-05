@@ -120,7 +120,11 @@ impl MemoryBackend for log::MemorySystem {
 }
 
 pub fn create_all() -> Vec<Box<dyn MemoryBackend>> {
-    vec![Box::new(log::MemorySystem::default())]
+    vec![create_default()]
+}
+
+pub fn create_default() -> Box<dyn MemoryBackend> {
+    Box::new(log::MemorySystem::default())
 }
 
 pub type MemorySystem = log::MemorySystem;
