@@ -89,9 +89,9 @@ impl MemorySystem {
 
         let view = &mut self.threads[thread];
 
-        let all_ops = std::iter::once(&self.acc[addr]).chain(self.log.iter());
+        let mut all_ops = std::iter::once(&self.acc[addr]).chain(self.log.iter());
 
-        let choice: &MemoryOperation = all_ops.filter(|mo| mo.address == addr).last().unwrap();
+        let choice: &MemoryOperation = all_ops.rfind(|mo| mo.address == addr).unwrap();
 
         let (load_ordering, store_ordering) = if success == Ordering::AcqRel {
             (Ordering::Acquire, Ordering::Release)
@@ -350,12 +350,12 @@ impl MemorySystem {
 
         let possible: Vec<&MemoryOperation> = all_ops.filter(|mo| mo.address == addr).collect();
 
-        let seq_cst_ops = possible.iter().filter(|mo| mo.level == Ordering::SeqCst);
+        let mut seq_cst_ops = possible.iter().filter(|mo| mo.level == Ordering::SeqCst);
 
         let minimum_op = if level == Ordering::SeqCst {
             // A seq_cst load will see the latest seq_cst store if it exists
             let latest_seq_cst_op = seq_cst_ops
-                .last()
+                .next_back()
                 .map(|mo| mo.global_sequence)
                 .unwrap_or(0_usize);
 
@@ -369,9 +369,7 @@ impl MemorySystem {
             latest_seq_cst_op.max(*latest_fence_op)
         } else {
             // A seq_cst fence on this thread causes the latest prior seq_cst store to be the minimum
-            seq_cst_ops
-                .filter(|mo| mo.global_sequence < view.min_seq_cst_sequence)
-                .last()
+            seq_cst_ops.rfind(|mo| mo.global_sequence < view.min_seq_cst_sequence)
                 .map(|v| v.global_sequence)
                 .unwrap_or(0_usize)
         };
