@@ -1,4 +1,4 @@
-use memlog::backend::{MemorySystem, NAME as BACKEND_NAME};
+use memlog::backend::{available_backends, MemoryBackend};
 use std::hint::black_box;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 const ITERATION_COUNTS: [usize; 4] = [10, 100, 1_000, 10_000];
 
 struct BenchResult {
+    backend: &'static str,
     name: &'static str,
     iterations: usize,
     elapsed: Duration,
@@ -14,7 +15,7 @@ struct BenchResult {
 
 struct BenchCase {
     name: &'static str,
-    bench: fn(usize) -> usize,
+    bench: fn(&mut dyn MemoryBackend, usize) -> usize,
 }
 
 fn main() {
@@ -37,23 +38,26 @@ fn main() {
         },
     ];
 
-    println!("backend: {BACKEND_NAME}");
     println!("iterations: {}", format_iterations(&ITERATION_COUNTS));
-    println!("case,iterations,total_ms,ns_per_iter,checksum");
+    println!("backend,case,iterations,total_ms,ns_per_iter,checksum");
 
-    for iterations in ITERATION_COUNTS {
-        for case in &cases {
-            let result = run(iterations, case);
-            let ns_per_iter = result.elapsed.as_nanos() as f64 / result.iterations as f64;
+    for backend in available_backends() {
+        for iterations in ITERATION_COUNTS {
+            for case in &cases {
+                let mut memory = backend.construct();
+                let result = run(backend.name(), memory.as_mut(), iterations, case);
+                let ns_per_iter = result.elapsed.as_nanos() as f64 / result.iterations as f64;
 
-            println!(
-                "{},{},{:.3},{:.1},{}",
-                result.name,
-                result.iterations,
-                result.elapsed.as_secs_f64() * 1_000.0,
-                ns_per_iter,
-                result.checksum
-            );
+                println!(
+                    "{},{},{},{:.3},{:.1},{}",
+                    result.backend,
+                    result.name,
+                    result.iterations,
+                    result.elapsed.as_secs_f64() * 1_000.0,
+                    ns_per_iter,
+                    result.checksum
+                );
+            }
         }
     }
 }
@@ -66,12 +70,18 @@ fn format_iterations(iterations: &[usize]) -> String {
         .join(",")
 }
 
-fn run(iterations: usize, case: &BenchCase) -> BenchResult {
+fn run(
+    backend: &'static str,
+    memory: &mut dyn MemoryBackend,
+    iterations: usize,
+    case: &BenchCase,
+) -> BenchResult {
     let start = Instant::now();
-    let checksum = (case.bench)(iterations);
+    let checksum = (case.bench)(memory, iterations);
     let elapsed = start.elapsed();
 
     BenchResult {
+        backend,
         name: case.name,
         iterations,
         elapsed,
@@ -79,8 +89,7 @@ fn run(iterations: usize, case: &BenchCase) -> BenchResult {
     }
 }
 
-fn same_thread_relaxed(iterations: usize) -> usize {
-    let mut mem = MemorySystem::default();
+fn same_thread_relaxed(mem: &mut dyn MemoryBackend, iterations: usize) -> usize {
     let addr = mem.malloc(1);
     let thread = mem.add_thread();
     let mut checksum = 0;
@@ -93,8 +102,7 @@ fn same_thread_relaxed(iterations: usize) -> usize {
     checksum
 }
 
-fn relaxed_history_reads(iterations: usize) -> usize {
-    let mut mem = MemorySystem::default();
+fn relaxed_history_reads(mem: &mut dyn MemoryBackend, iterations: usize) -> usize {
     let addr = mem.malloc(1);
     let writer = mem.add_thread();
     let reader = mem.add_thread();
@@ -111,8 +119,7 @@ fn relaxed_history_reads(iterations: usize) -> usize {
     checksum
 }
 
-fn release_acquire_handoff(iterations: usize) -> usize {
-    let mut mem = MemorySystem::default();
+fn release_acquire_handoff(mem: &mut dyn MemoryBackend, iterations: usize) -> usize {
     let base = mem.malloc(2);
     let data = base;
     let flag = base + 1;
@@ -130,8 +137,7 @@ fn release_acquire_handoff(iterations: usize) -> usize {
     checksum
 }
 
-fn seq_cst_exchange(iterations: usize) -> usize {
-    let mut mem = MemorySystem::default();
+fn seq_cst_exchange(mem: &mut dyn MemoryBackend, iterations: usize) -> usize {
     let base = mem.malloc(2);
     let left_addr = base;
     let right_addr = base + 1;

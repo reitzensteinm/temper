@@ -1,8 +1,8 @@
 use crate::log;
 use std::sync::atomic::Ordering;
 
-pub trait MemoryBackend: Default {
-    const NAME: &'static str;
+pub trait MemoryBackend {
+    fn name(&self) -> &'static str;
 
     fn add_thread(&mut self) -> usize;
     fn malloc(&mut self, size: usize) -> usize;
@@ -10,11 +10,11 @@ pub trait MemoryBackend: Default {
     fn store(&mut self, thread: usize, addr: usize, val: usize, level: Ordering);
     fn fence(&mut self, thread: usize, level: Ordering);
 
-    fn fetch_op<F: Fn(usize) -> usize>(
+    fn fetch_op(
         &mut self,
         thread: usize,
         addr: usize,
-        f: F,
+        f: &dyn Fn(usize) -> usize,
         level: Ordering,
     ) -> usize;
 
@@ -38,18 +38,20 @@ pub trait MemoryBackend: Default {
         failure: Ordering,
     ) -> Result<usize, usize>;
 
-    fn fetch_update<F: Fn(usize) -> Option<usize>>(
+    fn fetch_update(
         &mut self,
         thread: usize,
         addr: usize,
-        f: F,
+        f: &dyn Fn(usize) -> Option<usize>,
         set_order: Ordering,
         fetch_order: Ordering,
     ) -> Result<usize, usize>;
 }
 
 impl MemoryBackend for log::MemorySystem {
-    const NAME: &'static str = "log";
+    fn name(&self) -> &'static str {
+        "log"
+    }
 
     fn add_thread(&mut self) -> usize {
         log::MemorySystem::add_thread(self)
@@ -71,11 +73,11 @@ impl MemoryBackend for log::MemorySystem {
         log::MemorySystem::fence(self, thread, level);
     }
 
-    fn fetch_op<F: Fn(usize) -> usize>(
+    fn fetch_op(
         &mut self,
         thread: usize,
         addr: usize,
-        f: F,
+        f: &dyn Fn(usize) -> usize,
         level: Ordering,
     ) -> usize {
         log::MemorySystem::fetch_op(self, thread, addr, f, level)
@@ -105,11 +107,11 @@ impl MemoryBackend for log::MemorySystem {
         log::MemorySystem::compare_exchange_weak(self, thread, addr, current, new, success, failure)
     }
 
-    fn fetch_update<F: Fn(usize) -> Option<usize>>(
+    fn fetch_update(
         &mut self,
         thread: usize,
         addr: usize,
-        f: F,
+        f: &dyn Fn(usize) -> Option<usize>,
         set_order: Ordering,
         fetch_order: Ordering,
     ) -> Result<usize, usize> {
@@ -117,6 +119,35 @@ impl MemoryBackend for log::MemorySystem {
     }
 }
 
-pub type MemorySystem = log::MemorySystem;
+#[derive(Clone, Copy)]
+pub struct BackendConstructor {
+    name: &'static str,
+    construct: fn() -> Box<dyn MemoryBackend>,
+}
 
-pub const NAME: &str = <MemorySystem as MemoryBackend>::NAME;
+impl BackendConstructor {
+    pub const fn new(name: &'static str, construct: fn() -> Box<dyn MemoryBackend>) -> Self {
+        BackendConstructor { name, construct }
+    }
+
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
+
+    pub fn construct(&self) -> Box<dyn MemoryBackend> {
+        (self.construct)()
+    }
+}
+
+pub fn available_backends() -> &'static [BackendConstructor] {
+    static BACKENDS: &[BackendConstructor] =
+        &[BackendConstructor::new("log", construct_log_backend)];
+
+    BACKENDS
+}
+
+fn construct_log_backend() -> Box<dyn MemoryBackend> {
+    Box::new(log::MemorySystem::default())
+}
+
+pub type MemorySystem = log::MemorySystem;
