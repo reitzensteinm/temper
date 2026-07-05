@@ -7,7 +7,8 @@ edition = "2021"
 
 [features]
 default = []
-rc11 = []
+memgraph = []
+rc11 = ["memgraph"]
 
 [dependencies]
 rand_chacha = "0.3.1"
