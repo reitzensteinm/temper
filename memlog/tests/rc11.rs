@@ -5,19 +5,14 @@ use std::sync::atomic::Ordering;
 mod common;
 
 /*
-https://plv.mpi-sws.org/scfix/
-https://plv.mpi-sws.org/scfix/rc11.cat
 https://plv.mpi-sws.org/scfix/paper.pdf
 
 RC11 repaired the C++11 SC semantics and added a formal no-thin-air rule,
-acyclic(sb | rf), which C++20 did not adopt. The SC changes that C++20 did
-adopt (IRIW-acq-sc, Z6.U, RWC+syncs, W+RWC) are covered in cxx20.rs; this
-file keeps the RC11-only rules. Paper variables x/y map to eg.a/eg.b.
+acyclic(sb | rf), which C++20 did not adopt. The changes that C++20 did
+adopt are covered in cxx20.rs; this file keeps the RC11-only rules.
 */
 
 /*
-https://plv.mpi-sws.org/scfix/paper.pdf
-
 LB: RC11's no-thin-air rule rejects executions with cycles in sb | rf.
 
 This combination of loaded values is forbidden. Each relaxed load would have
@@ -57,8 +52,6 @@ fn rc11_forbids_lb() {
 }
 
 /*
-https://plv.mpi-sws.org/scfix/paper.pdf
-
 LB+deps: the standard out-of-thin-air example from the RC11 paper.
 
 This combination of loaded values is forbidden. A 1 would appear out of thin
@@ -99,8 +92,6 @@ fn rc11_forbids_lb_deps() {
 }
 
 /*
-https://plv.mpi-sws.org/scfix/rc11.cat
-
 SB: the classic store-buffering litmus test.
 
 This combination of loaded values is forbidden. The SC operations are totally
@@ -139,8 +130,6 @@ fn rc11_forbids_sb() {
 }
 
 /*
-https://plv.mpi-sws.org/scfix/rc11.cat
-
 2+2W: SC stores to two locations cannot be ordered in opposite directions.
 
 This combination of loaded values is forbidden. The relaxed reads cannot

@@ -8,7 +8,7 @@ edition = "2021"
 [features]
 default = []
 graph = []
-rc11 = ["graph"]
+rc11 = []
 
 [dependencies]
 rand_chacha = "0.3.1"
