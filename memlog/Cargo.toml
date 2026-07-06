@@ -5,6 +5,10 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = []
+rc11 = []
+
 [dependencies]
 rand_chacha = "0.3.1"
 rand = "0.8.5"
@@ -12,3 +16,8 @@ rand = "0.8.5"
 [[bench]]
 name = "memory_system"
 harness = false
+
+[[test]]
+name = "rc11"
+path = "tests/rc11.rs"
+required-features = ["rc11"]
