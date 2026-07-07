@@ -299,6 +299,9 @@ impl MemorySystem {
         }
 
         self.push_write(thread, addr, val, level, carries_release, view);
+
+        let write = self.writes[addr].last_mut().unwrap();
+        synchronize(&mut write.fence_view, &source_write.fence_view);
     }
 
     fn push_write(
