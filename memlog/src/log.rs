@@ -128,9 +128,9 @@ impl MemorySystem {
         };
 
         // Are we continuing a release chain?
-        let release_chain = choice.level != Ordering::Relaxed;
+        let release_chain = choice.level != Ordering::Relaxed || choice.release_chain;
 
-        let seqs = if choice.level == Ordering::Relaxed {
+        let seqs = if !release_chain {
             this_seqs
         } else if success == Ordering::Release
             || success == Ordering::AcqRel
@@ -141,11 +141,13 @@ impl MemorySystem {
             choice_seqs
         };
 
-        let fence_sequence = if store_ordering == Ordering::Relaxed {
+        let mut fence_sequence = if store_ordering == Ordering::Relaxed {
             seqs.1.mask_atomic()
         } else {
             seqs.1.clone()
         };
+
+        fence_sequence.synchronize(&choice.source_fence_sequence);
 
         self.log.push(MemoryOperation {
             thread,
