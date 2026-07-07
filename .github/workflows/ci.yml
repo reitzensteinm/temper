@@ -22,6 +22,14 @@ jobs:
         with:
           command: test
           args: --release --workspace -- --test-threads=1
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --release -p memlog --features rc11 -- --test-threads=1
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --release -p memlog --features rc11,graph -- --test-threads=1
 
   clippy:
     name: Clippy

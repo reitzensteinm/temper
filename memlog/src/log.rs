@@ -1,3 +1,4 @@
+use crate::backend::MemoryBackend;
 use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
@@ -439,5 +440,76 @@ impl MemorySystem {
         }
 
         base
+    }
+}
+
+impl MemoryBackend for MemorySystem {
+    fn name(&self) -> &'static str {
+        "log"
+    }
+
+    fn add_thread(&mut self) -> usize {
+        MemorySystem::add_thread(self)
+    }
+
+    fn malloc(&mut self, size: usize) -> usize {
+        MemorySystem::malloc(self, size)
+    }
+
+    fn load(&mut self, thread: usize, addr: usize, level: Ordering) -> usize {
+        MemorySystem::load(self, thread, addr, level)
+    }
+
+    fn store(&mut self, thread: usize, addr: usize, val: usize, level: Ordering) {
+        MemorySystem::store(self, thread, addr, val, level);
+    }
+
+    fn fence(&mut self, thread: usize, level: Ordering) {
+        MemorySystem::fence(self, thread, level);
+    }
+
+    fn fetch_op(
+        &mut self,
+        thread: usize,
+        addr: usize,
+        f: &dyn Fn(usize) -> usize,
+        level: Ordering,
+    ) -> usize {
+        MemorySystem::fetch_op(self, thread, addr, f, level)
+    }
+
+    fn compare_exchange(
+        &mut self,
+        thread: usize,
+        addr: usize,
+        current: usize,
+        new: usize,
+        success: Ordering,
+        failure: Ordering,
+    ) -> Result<usize, usize> {
+        MemorySystem::compare_exchange(self, thread, addr, current, new, success, failure)
+    }
+
+    fn compare_exchange_weak(
+        &mut self,
+        thread: usize,
+        addr: usize,
+        current: usize,
+        new: usize,
+        success: Ordering,
+        failure: Ordering,
+    ) -> Result<usize, usize> {
+        MemorySystem::compare_exchange_weak(self, thread, addr, current, new, success, failure)
+    }
+
+    fn fetch_update(
+        &mut self,
+        thread: usize,
+        addr: usize,
+        f: &dyn Fn(usize) -> Option<usize>,
+        set_order: Ordering,
+        fetch_order: Ordering,
+    ) -> Result<usize, usize> {
+        MemorySystem::fetch_update(self, thread, addr, f, set_order, fetch_order)
     }
 }

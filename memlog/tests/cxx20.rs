@@ -13,7 +13,8 @@ C++20 revised the memory model: the seq_cst total order need only agree with
 strongly-happens-before, allowing mixed seq_cst/acquire/release behaviors that
 match real hardware (P0668R5); seq_cst fences were strengthened (P0668R5); and
 same-thread non-RMW writes no longer extend release sequences (P0982R1).
-RC11's formal no-thin-air rule, acyclic(sb | rf), was not adopted.
+RC11's formal no-thin-air rule, acyclic(sb | rf), was not adopted; memlog's
+in-order API cannot produce such executions anyway (see cxx20_allows_lb).
 */
 
 /*
@@ -32,11 +33,14 @@ store but not the other's, which no interleaving can produce.
         d = x.load(SeqCst)  // 0
     T3: y.store(1, SeqCst)
 
-Currently, memlog does _not_ simulate this outcome.
+The log backend does not currently simulate this outcome; graph does.
 */
 
 #[test]
-#[ignore = "current memlog is stricter than C++20 for IRIW-acq-sc"]
+#[cfg_attr(
+    not(feature = "graph"),
+    ignore = "current log backend is stricter than C++20 for IRIW-acq-sc"
+)]
 fn cxx20_allows_iriw_acq_sc() {
     fn inner() -> Vec<usize> {
         let mut lt = LogTest::default();
@@ -95,11 +99,14 @@ T1 through the RMW, but that no longer forces x's store into the SC order.
     T2: y.store(3, SeqCst)
         a = x.load(SeqCst)         // 0
 
-Currently, memlog does _not_ simulate this outcome.
+The log backend does not currently simulate this outcome; graph does.
 */
 
 #[test]
-#[ignore = "current memlog is stricter than C++20 for Z6.U"]
+#[cfg_attr(
+    not(feature = "graph"),
+    ignore = "current log backend is stricter than C++20 for Z6.U"
+)]
 fn cxx20_allows_z6_u() {
     fn inner() -> Vec<usize> {
         let mut lt = LogTest::default();
@@ -327,4 +334,45 @@ fn cxx20_relaxed_rmw_still_extends_release_sequence() {
     }
 
     assert!(run_until(inner, vec![vec![0, 0, 1], vec![0, 1, 1]]));
+}
+
+/*
+https://plv.mpi-sws.org/scfix/paper.pdf
+
+C++20 allows plain load buffering: neither store depends on its thread's
+load, so both may be reordered ahead of them.
+
+    T0: b = y.load(Relaxed) // 1
+        x.store(1, Relaxed)
+    T1: a = x.load(Relaxed) // 1
+        y.store(1, Relaxed)
+
+Due to the structure of memlog's API, which allows multiple versions of
+history to exist simultaneously, but does not allow for the reordering
+of operations, this test will not succeed. This is a gap that must be
+rectified elsewhere in the stack.
+*/
+
+#[test]
+#[ignore = "due to the in-order limitations of memlog's API, load buffering cannot surface"]
+fn cxx20_allows_lb() {
+    fn inner() -> Vec<usize> {
+        let mut lt = LogTest::default();
+
+        lt.add(|mut eg: Environment| {
+            let b = eg.b.load(Ordering::Relaxed);
+            eg.a.store(1, Ordering::Relaxed);
+            b
+        });
+
+        lt.add(|mut eg: Environment| {
+            let a = eg.a.load(Ordering::Relaxed);
+            eg.b.store(1, Ordering::Relaxed);
+            a
+        });
+
+        lt.run()
+    }
+
+    assert!(run_until(inner, permutations(vec![vec![0, 1], vec![0, 1]])));
 }
