@@ -1,1 +1,0 @@
-* Currently, `explanation_relaxed_ordering_impossible` notes that a=b=42 is valid, but we're not able to simulate it. This should be replaced by a test that's ignored. The test suite should at some point be able to simulate this outcome.
