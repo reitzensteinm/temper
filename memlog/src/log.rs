@@ -1,4 +1,4 @@
-use crate::backend::MemoryBackend;
+use crate::backend::{assert_valid_failure_order, rmw_orderings, MemoryBackend};
 use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
@@ -82,11 +82,7 @@ impl MemorySystem {
         success: Ordering,
         failure: Ordering,
     ) -> Result<usize, usize> {
-        assert!(
-            failure == Ordering::SeqCst
-                || failure == Ordering::Acquire
-                || failure == Ordering::Relaxed
-        );
+        assert_valid_failure_order(failure);
 
         let view = &mut self.threads[thread];
 
@@ -94,11 +90,7 @@ impl MemorySystem {
 
         let choice: &MemoryOperation = all_ops.rfind(|mo| mo.address == addr).unwrap();
 
-        let (load_ordering, store_ordering) = if success == Ordering::AcqRel {
-            (Ordering::Acquire, Ordering::Release)
-        } else {
-            (success, success)
-        };
+        let (load_ordering, store_ordering) = rmw_orderings(success);
 
         let v = choice.value;
         let res = f(v);

@@ -1,4 +1,4 @@
-use crate::backend::MemoryBackend;
+use crate::backend::{assert_valid_failure_order, rmw_orderings, MemoryBackend};
 use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::atomic::Ordering;
@@ -140,9 +140,10 @@ impl MemorySystem {
         f: F,
         level: Ordering,
     ) -> usize {
+        let (load_order, store_order) = rmw_orderings(level);
         let selected = self.writes[addr].len() - 1;
-        let current = self.rmw_read(thread, addr, selected, level);
-        self.rmw_write(thread, addr, f(current), selected, rmw_store_order(level));
+        let current = self.read_from(thread, addr, selected, load_order);
+        self.rmw_write(thread, addr, f(current), selected, store_order);
         current
     }
 
@@ -157,12 +158,13 @@ impl MemorySystem {
     ) -> Result<usize, usize> {
         assert_valid_failure_order(failure);
 
+        let (load_order, store_order) = rmw_orderings(success);
         let selected = self.writes[addr].len() - 1;
         let actual = self.writes[addr][selected].value;
 
         if actual == current {
-            self.rmw_read(thread, addr, selected, success);
-            self.rmw_write(thread, addr, new, selected, rmw_store_order(success));
+            self.read_from(thread, addr, selected, load_order);
+            self.rmw_write(thread, addr, new, selected, store_order);
             Ok(actual)
         } else {
             self.read_from(thread, addr, selected, failure);
@@ -266,16 +268,6 @@ impl MemorySystem {
         }
 
         write.value
-    }
-
-    fn rmw_read(&mut self, thread: usize, addr: usize, selected: usize, level: Ordering) -> usize {
-        let load_order = match level {
-            Ordering::AcqRel => Ordering::Acquire,
-            Ordering::Release => Ordering::Relaxed,
-            _ => level,
-        };
-
-        self.read_from(thread, addr, selected, load_order)
     }
 
     fn rmw_write(
@@ -691,21 +683,6 @@ impl MemoryBackend for MemorySystem {
         fetch_order: Ordering,
     ) -> Result<usize, usize> {
         MemorySystem::fetch_update(self, thread, addr, f, set_order, fetch_order)
-    }
-}
-
-fn assert_valid_failure_order(level: Ordering) {
-    assert!(matches!(
-        level,
-        Ordering::Relaxed | Ordering::Acquire | Ordering::SeqCst
-    ));
-}
-
-fn rmw_store_order(level: Ordering) -> Ordering {
-    match level {
-        Ordering::AcqRel => Ordering::Release,
-        Ordering::Acquire => Ordering::Relaxed,
-        _ => level,
     }
 }
 

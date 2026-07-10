@@ -50,6 +50,22 @@ pub trait MemoryBackend: Send {
     ) -> Result<usize, usize>;
 }
 
+pub fn rmw_orderings(success: Ordering) -> (Ordering, Ordering) {
+    match success {
+        Ordering::AcqRel => (Ordering::Acquire, Ordering::Release),
+        Ordering::Acquire => (Ordering::Acquire, Ordering::Relaxed),
+        Ordering::Release => (Ordering::Relaxed, Ordering::Release),
+        other => (other, other),
+    }
+}
+
+pub fn assert_valid_failure_order(level: Ordering) {
+    assert!(matches!(
+        level,
+        Ordering::Relaxed | Ordering::Acquire | Ordering::SeqCst
+    ));
+}
+
 pub fn create_all() -> Vec<Box<dyn MemoryBackend>> {
     let mut backends: Vec<Box<dyn MemoryBackend>> = vec![Box::new(log::MemorySystem::default())];
     add_optional_backends(&mut backends);

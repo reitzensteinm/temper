@@ -50,3 +50,7 @@ jobs:
         with:
           command: clippy
           args: --tests --workspace -- -D warnings
+      - uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --tests -p memlog --features rc11,graph -- -D warnings
