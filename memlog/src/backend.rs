@@ -30,6 +30,9 @@ pub trait MemoryBackend: Send {
         failure: Ordering,
     ) -> Result<usize, usize>;
 
+    /// Coin flip deciding whether compare_exchange_weak fails spuriously.
+    fn spurious_failure(&mut self) -> bool;
+
     fn compare_exchange_weak(
         &mut self,
         thread: usize,
@@ -38,7 +41,15 @@ pub trait MemoryBackend: Send {
         new: usize,
         success: Ordering,
         failure: Ordering,
-    ) -> Result<usize, usize>;
+    ) -> Result<usize, usize> {
+        assert_valid_failure_order(failure);
+
+        if self.spurious_failure() {
+            Err(self.load(thread, addr, failure))
+        } else {
+            self.compare_exchange(thread, addr, current, new, success, failure)
+        }
+    }
 
     fn fetch_update(
         &mut self,
@@ -47,7 +58,22 @@ pub trait MemoryBackend: Send {
         f: &dyn Fn(usize) -> Option<usize>,
         set_order: Ordering,
         fetch_order: Ordering,
-    ) -> Result<usize, usize>;
+    ) -> Result<usize, usize> {
+        loop {
+            let current = self.load(thread, addr, fetch_order);
+            match f(current) {
+                None => return Err(current),
+                Some(new) => {
+                    if self
+                        .compare_exchange_weak(thread, addr, current, new, set_order, fetch_order)
+                        .is_ok()
+                    {
+                        return Ok(current);
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub fn rmw_orderings(success: Ordering) -> (Ordering, Ordering) {

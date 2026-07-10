@@ -188,55 +188,6 @@ impl MemorySystem {
         )
     }
 
-    pub fn compare_exchange_weak(
-        &mut self,
-        thread: usize,
-        addr: usize,
-        current: usize,
-        new: usize,
-        success: Ordering,
-        failure: Ordering,
-    ) -> Result<usize, usize> {
-        let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
-        let mut rng = ChaCha8Rng::seed_from_u64(s);
-
-        if rng.gen_bool(0.5) {
-            self.op(
-                thread,
-                addr,
-                |v| if v == current { Some(new) } else { None },
-                success,
-                failure,
-            )
-        } else {
-            Err(self.load(thread, addr, failure))
-        }
-    }
-
-    pub fn fetch_update<F: Fn(usize) -> Option<usize>>(
-        &mut self,
-        thread: usize,
-        addr: usize,
-        f: F,
-        set_order: Ordering,
-        fetch_order: Ordering,
-    ) -> Result<usize, usize> {
-        loop {
-            let current = self.load(thread, addr, fetch_order);
-            match f(current) {
-                None => return Err(current),
-                Some(new) => {
-                    if self
-                        .compare_exchange_weak(thread, addr, current, new, set_order, fetch_order)
-                        .is_ok()
-                    {
-                        return Ok(current);
-                    }
-                }
-            }
-        }
-    }
-
     pub fn fence(&mut self, thread: usize, level: Ordering) {
         assert!(
             level == Ordering::Acquire
@@ -482,26 +433,10 @@ impl MemoryBackend for MemorySystem {
         MemorySystem::compare_exchange(self, thread, addr, current, new, success, failure)
     }
 
-    fn compare_exchange_weak(
-        &mut self,
-        thread: usize,
-        addr: usize,
-        current: usize,
-        new: usize,
-        success: Ordering,
-        failure: Ordering,
-    ) -> Result<usize, usize> {
-        MemorySystem::compare_exchange_weak(self, thread, addr, current, new, success, failure)
-    }
+    fn spurious_failure(&mut self) -> bool {
+        let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
+        let mut rng = ChaCha8Rng::seed_from_u64(s);
 
-    fn fetch_update(
-        &mut self,
-        thread: usize,
-        addr: usize,
-        f: &dyn Fn(usize) -> Option<usize>,
-        set_order: Ordering,
-        fetch_order: Ordering,
-    ) -> Result<usize, usize> {
-        MemorySystem::fetch_update(self, thread, addr, f, set_order, fetch_order)
+        rng.gen_bool(0.5)
     }
 }
