@@ -28,11 +28,6 @@ enum EventKind {
     Store,
 }
 
-#[derive(Clone, Debug)]
-struct Event {
-    kind: EventKind,
-}
-
 #[derive(Debug)]
 pub struct MemorySystem {
     writes: Vec<Vec<Write>>,
@@ -40,7 +35,7 @@ pub struct MemorySystem {
     seq_cst_writes: Vec<Vec<usize>>,
     seq_cst_fence: Vec<usize>,
     threads: Vec<ThreadView>,
-    events: Vec<Event>,
+    events: Vec<EventKind>,
     edges: Vec<Vec<usize>>,
     read_frontier: Vec<Vec<usize>>,
     reach_seen: Vec<u32>,
@@ -124,13 +119,7 @@ impl MemorySystem {
             Ordering::Relaxed | Ordering::Release | Ordering::SeqCst
         ));
 
-        let view = if is_release_store_order(level) {
-            self.threads[thread].visible.clone()
-        } else {
-            vec![]
-        };
-
-        self.push_write(thread, addr, val, level, false, view);
+        self.push_write(thread, addr, val, level, None);
     }
 
     pub fn fetch_op<F: Fn(usize) -> usize>(
@@ -143,7 +132,7 @@ impl MemorySystem {
         let (load_order, store_order) = rmw_orderings(level);
         let selected = self.writes[addr].len() - 1;
         let current = self.read_from(thread, addr, selected, load_order);
-        self.rmw_write(thread, addr, f(current), selected, store_order);
+        self.push_write(thread, addr, f(current), store_order, Some(selected));
         current
     }
 
@@ -164,7 +153,7 @@ impl MemorySystem {
 
         if actual == current {
             self.read_from(thread, addr, selected, load_order);
-            self.rmw_write(thread, addr, new, selected, store_order);
+            self.push_write(thread, addr, new, store_order, Some(selected));
             Ok(actual)
         } else {
             self.read_from(thread, addr, selected, failure);
@@ -178,122 +167,55 @@ impl MemorySystem {
         }
     }
 
-    pub fn compare_exchange_weak(
-        &mut self,
-        thread: usize,
-        addr: usize,
-        current: usize,
-        new: usize,
-        success: Ordering,
-        failure: Ordering,
-    ) -> Result<usize, usize> {
-        assert_valid_failure_order(failure);
-
-        if self.rng.gen_bool(0.5) {
-            self.compare_exchange(thread, addr, current, new, success, failure)
-        } else {
-            Err(self.load(thread, addr, failure))
-        }
-    }
-
-    pub fn fetch_update<F: Fn(usize) -> Option<usize>>(
-        &mut self,
-        thread: usize,
-        addr: usize,
-        f: F,
-        set_order: Ordering,
-        fetch_order: Ordering,
-    ) -> Result<usize, usize> {
-        loop {
-            let current = self.load(thread, addr, fetch_order);
-            match f(current) {
-                None => return Err(current),
-                Some(new) => {
-                    if self
-                        .compare_exchange_weak(thread, addr, current, new, set_order, fetch_order)
-                        .is_ok()
-                    {
-                        return Ok(current);
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn fence(&mut self, _thread: usize, level: Ordering) {
+    pub fn fence(&mut self, thread: usize, level: Ordering) {
         assert!(matches!(
             level,
             Ordering::Acquire | Ordering::Release | Ordering::AcqRel | Ordering::SeqCst
         ));
 
+        let view = &mut self.threads[thread];
+
         if matches!(
             level,
             Ordering::Acquire | Ordering::AcqRel | Ordering::SeqCst
         ) {
-            let pending_fence = self.threads[_thread].pending_fence.clone();
-            synchronize(&mut self.threads[_thread].visible, &pending_fence);
+            synchronize(&mut view.visible, &view.pending_fence);
         }
 
         if matches!(
             level,
             Ordering::Release | Ordering::AcqRel | Ordering::SeqCst
         ) {
-            let visible = self.threads[_thread].visible.clone();
-            synchronize(&mut self.threads[_thread].release_fence, &visible);
+            synchronize(&mut view.release_fence, &view.visible);
         }
 
         if level == Ordering::SeqCst {
-            synchronize(&mut self.threads[_thread].visible, &self.seq_cst_fence);
-            synchronize(&mut self.seq_cst_fence, &self.threads[_thread].visible);
-            synchronize(&mut self.threads[_thread].seq_cst_min, &self.latest_seq_cst);
+            synchronize(&mut view.visible, &self.seq_cst_fence);
+            synchronize(&mut self.seq_cst_fence, &view.visible);
+            synchronize(&mut view.seq_cst_min, &self.latest_seq_cst);
         }
     }
 
     fn read_from(&mut self, thread: usize, addr: usize, selected: usize, level: Ordering) -> usize {
-        let write = self.writes[addr][selected].clone();
+        let write = &self.writes[addr][selected];
+        let view = &mut self.threads[thread];
 
-        self.threads[thread].visible[addr] = selected;
+        view.visible[addr] = selected;
 
-        if is_synchronizing_source(&write) {
-            synchronize(&mut self.threads[thread].pending_fence, &write.view);
+        if is_synchronizing_source(write) {
+            synchronize(&mut view.pending_fence, &write.view);
         }
 
-        synchronize(&mut self.threads[thread].pending_fence, &write.fence_view);
+        synchronize(&mut view.pending_fence, &write.fence_view);
 
         if matches!(level, Ordering::Acquire | Ordering::SeqCst) {
-            if is_synchronizing_source(&write) {
-                synchronize(&mut self.threads[thread].visible, &write.view);
+            if is_synchronizing_source(write) {
+                synchronize(&mut view.visible, &write.view);
             }
-            synchronize(&mut self.threads[thread].visible, &write.fence_view);
+            synchronize(&mut view.visible, &write.fence_view);
         }
 
         write.value
-    }
-
-    fn rmw_write(
-        &mut self,
-        thread: usize,
-        addr: usize,
-        val: usize,
-        source: usize,
-        level: Ordering,
-    ) {
-        let source_write = self.writes[addr][source].clone();
-        let carries_release = is_synchronizing_source(&source_write);
-        let mut view = if carries_release {
-            source_write.view
-        } else {
-            vec![]
-        };
-
-        if is_release_store_order(level) {
-            synchronize(&mut view, &self.threads[thread].visible);
-        }
-
-        self.push_write(thread, addr, val, level, carries_release, view);
-
-        let write = self.writes[addr].last_mut().unwrap();
-        synchronize(&mut write.fence_view, &source_write.fence_view);
     }
 
     fn push_write(
@@ -302,14 +224,38 @@ impl MemorySystem {
         addr: usize,
         val: usize,
         level: Ordering,
-        release_chain: bool,
-        mut view: Vec<usize>,
+        rmw_source: Option<usize>,
     ) {
+        // An RMW continues the release chain of the write it read from, and
+        // republishes that write's release view through its own store.
+        let (release_chain, mut view) = match rmw_source {
+            Some(source) => {
+                let source_write = &self.writes[addr][source];
+                if is_synchronizing_source(source_write) {
+                    (true, source_write.view.clone())
+                } else {
+                    (false, vec![])
+                }
+            }
+            None => (false, vec![]),
+        };
+
         let new_index = self.writes[addr].len();
         self.threads[thread].visible[addr] = new_index;
 
         if is_release_store_order(level) {
             synchronize(&mut view, &self.threads[thread].visible);
+        }
+
+        let release_fence = &self.threads[thread].release_fence;
+        let mut fence_view = if release_fence.iter().all(|sequence| *sequence == 0) {
+            vec![]
+        } else {
+            release_fence.clone()
+        };
+
+        if let Some(source) = rmw_source {
+            synchronize(&mut fence_view, &self.writes[addr][source].fence_view);
         }
 
         let event = if level == Ordering::SeqCst {
@@ -323,7 +269,7 @@ impl MemorySystem {
             level,
             release_chain,
             view,
-            fence_view: self.threads[thread].release_fence.clone(),
+            fence_view,
             event,
         });
 
@@ -431,7 +377,6 @@ impl MemorySystem {
             self.add_seq_cst_edge(event, target);
         }
 
-        debug_assert!(is_acyclic(&self.edges));
         self.add_read_frontier(addr, event);
         self.threads[thread].last_seq_cst = Some(event);
     }
@@ -496,21 +441,20 @@ impl MemorySystem {
 
         debug_assert!(self.read_frontier[addr]
             .iter()
-            .all(|load| matches!(self.events[*load].kind, EventKind::Load { addr: load_addr, from } if load_addr == addr && from < index)));
+            .all(|load| matches!(self.events[*load], EventKind::Load { addr: load_addr, from } if load_addr == addr && from < index)));
 
         let read_frontier = self.read_frontier[addr].clone();
         for load in read_frontier {
             self.add_seq_cst_edge(load, event);
         }
 
-        debug_assert!(is_acyclic(&self.edges));
         self.threads[thread].last_seq_cst = Some(event);
         event
     }
 
     fn add_seq_cst_event(&mut self, kind: EventKind) -> usize {
         let event = self.events.len();
-        self.events.push(Event { kind });
+        self.events.push(kind);
         self.edges.push(vec![]);
         self.reach_seen.push(0);
 
@@ -574,8 +518,12 @@ impl MemorySystem {
         self.read_frontier[addr] = frontier;
     }
 
+    // On-demand validator; the per-edge assert in add_seq_cst_edge keeps
+    // the graph acyclic during normal operation.
     #[allow(unused)]
     fn validate_seq_cst_reachability(&mut self) {
+        debug_assert!(is_acyclic(&self.edges));
+
         let edges = self.edges.clone();
 
         for (source, event_edges) in edges.iter().enumerate() {
@@ -587,7 +535,10 @@ impl MemorySystem {
         for source in 0..self.events.len() {
             for target in 0..self.events.len() {
                 if source != target && self.reaches(source, target) {
-                    debug_assert_ne!(source, target);
+                    debug_assert!(
+                        !self.reaches(target, source),
+                        "seq_cst event graph must be antisymmetric"
+                    );
                 }
             }
         }
@@ -662,27 +613,8 @@ impl MemoryBackend for MemorySystem {
         MemorySystem::compare_exchange(self, thread, addr, current, new, success, failure)
     }
 
-    fn compare_exchange_weak(
-        &mut self,
-        thread: usize,
-        addr: usize,
-        current: usize,
-        new: usize,
-        success: Ordering,
-        failure: Ordering,
-    ) -> Result<usize, usize> {
-        MemorySystem::compare_exchange_weak(self, thread, addr, current, new, success, failure)
-    }
-
-    fn fetch_update(
-        &mut self,
-        thread: usize,
-        addr: usize,
-        f: &dyn Fn(usize) -> Option<usize>,
-        set_order: Ordering,
-        fetch_order: Ordering,
-    ) -> Result<usize, usize> {
-        MemorySystem::fetch_update(self, thread, addr, f, set_order, fetch_order)
+    fn spurious_failure(&mut self) -> bool {
+        self.rng.gen_bool(0.5)
     }
 }
 
