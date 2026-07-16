@@ -41,10 +41,25 @@ pub struct MemorySystem {
     reach_seen: Vec<u32>,
     reach_generation: u32,
     reach_stack: Vec<usize>,
+    seq_cst_mode: SeqCstMode,
     rng: ChaCha8Rng,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SeqCstMode {
+    #[default]
+    Cxx20,
+    Cxx11,
+}
+
 impl MemorySystem {
+    pub fn with_seq_cst_mode(seq_cst_mode: SeqCstMode) -> Self {
+        Self {
+            seq_cst_mode,
+            ..Self::default()
+        }
+    }
+
     pub fn add_thread(&mut self) -> usize {
         let thread = self.threads.len();
         self.threads.push(ThreadView {
@@ -99,6 +114,9 @@ impl MemorySystem {
         let mut first = self.threads[thread].visible[addr];
         if level == Ordering::SeqCst {
             first = first.max(self.seq_cst_fence[addr]);
+            if self.seq_cst_mode == SeqCstMode::Cxx11 {
+                first = first.max(self.latest_seq_cst[addr]);
+            }
         } else {
             first = first.max(self.threads[thread].seq_cst_min[addr]);
         }
@@ -561,6 +579,7 @@ impl Default for MemorySystem {
             reach_seen: vec![],
             reach_generation: 0,
             reach_stack: vec![],
+            seq_cst_mode: SeqCstMode::default(),
             rng: ChaCha8Rng::seed_from_u64(seed),
         }
     }
@@ -667,4 +686,34 @@ fn is_acyclic(edges: &[Vec<usize>]) -> bool {
     }
 
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn issued_store_then_load(mode: SeqCstMode) -> usize {
+        let mut memory = MemorySystem::with_seq_cst_mode(mode);
+        let address = memory.malloc(1);
+        let writer = memory.add_thread();
+        let reader = memory.add_thread();
+
+        memory.store(writer, address, 1, Ordering::SeqCst);
+        memory.load(reader, address, Ordering::SeqCst)
+    }
+
+    fn outcomes(mode: SeqCstMode) -> BTreeSet<usize> {
+        (0..10_000).map(|_| issued_store_then_load(mode)).collect()
+    }
+
+    #[test]
+    fn cxx20_seq_cst_can_return_either_value() {
+        assert_eq!(outcomes(SeqCstMode::Cxx20), BTreeSet::from([0, 1]));
+    }
+
+    #[test]
+    fn cxx11_seq_cst_returns_issued_store() {
+        assert_eq!(outcomes(SeqCstMode::Cxx11), BTreeSet::from([1]));
+    }
 }
