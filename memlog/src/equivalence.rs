@@ -2,7 +2,7 @@ use crate::backend::MemoryBackend;
 use crate::graph::{self, SeqCstMode};
 use crate::log;
 use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
@@ -145,14 +145,25 @@ fn run(config: Config) -> Result<(), Difference> {
         "runs_per_case must be greater than zero"
     );
 
-    let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
+    let mut program_rng = ChaCha8Rng::seed_from_u64(config.seed);
+    let mut execution_rng = ChaCha8Rng::seed_from_u64(config.seed);
+    execution_rng.set_stream(1);
 
     for case in 0..config.cases {
-        let program = Program::generate(&mut rng, config.max_operations, config.ordering_mode);
+        let program = Program::generate(
+            &mut program_rng,
+            config.max_operations,
+            config.ordering_mode,
+        );
         let mut observations = Observations::default();
-        probe(&program, config.runs_per_case, &mut observations);
+        probe(
+            &program,
+            config.runs_per_case,
+            &mut observations,
+            &mut execution_rng,
+        );
 
-        if let Some((source, outcome)) = confirm(&program, &mut observations) {
+        if let Some((source, outcome)) = confirm(&program, &mut observations, &mut execution_rng) {
             return Err(Difference {
                 case,
                 seed: config.seed,
@@ -168,16 +179,23 @@ fn run(config: Config) -> Result<(), Difference> {
     Ok(())
 }
 
-fn probe(program: &Program, runs: usize, observations: &mut Observations) {
+fn probe(
+    program: &Program,
+    runs: usize,
+    observations: &mut Observations,
+    execution_rng: &mut ChaCha8Rng,
+) {
     for _ in 0..runs {
-        observe_log(program, observations);
-        observe_graph(program, observations);
+        let seed = execution_rng.next_u64();
+        observe_log(program, observations, seed);
+        observe_graph(program, observations, seed);
     }
 }
 
 fn confirm(
     program: &Program,
     observations: &mut Observations,
+    execution_rng: &mut ChaCha8Rng,
 ) -> Option<(Backend, Vec<Observation>)> {
     loop {
         if let Some(outcome) = observations
@@ -186,7 +204,7 @@ fn confirm(
             .next()
             .cloned()
         {
-            if !find_in_graph(program, &outcome, observations) {
+            if !find_in_graph(program, &outcome, observations, execution_rng) {
                 return Some((Backend::Log, outcome));
             }
             continue;
@@ -198,7 +216,7 @@ fn confirm(
             .next()
             .cloned()
         {
-            if !find_in_log(program, &outcome, observations) {
+            if !find_in_log(program, &outcome, observations, execution_rng) {
                 return Some((Backend::Graph, outcome));
             }
             continue;
@@ -212,9 +230,10 @@ fn find_in_log(
     program: &Program,
     expected: &[Observation],
     observations: &mut Observations,
+    execution_rng: &mut ChaCha8Rng,
 ) -> bool {
     for _ in 0..CONFIRMATION_RUNS {
-        if observe_log(program, observations) == expected {
+        if observe_log(program, observations, execution_rng.next_u64()) == expected {
             return true;
         }
     }
@@ -225,25 +244,30 @@ fn find_in_graph(
     program: &Program,
     expected: &[Observation],
     observations: &mut Observations,
+    execution_rng: &mut ChaCha8Rng,
 ) -> bool {
     for _ in 0..CONFIRMATION_RUNS {
-        if observe_graph(program, observations) == expected {
+        if observe_graph(program, observations, execution_rng.next_u64()) == expected {
             return true;
         }
     }
     false
 }
 
-fn observe_log(program: &Program, observations: &mut Observations) -> Vec<Observation> {
-    let outcome = execute(log::MemorySystem::default(), program);
+fn observe_log(program: &Program, observations: &mut Observations, seed: u64) -> Vec<Observation> {
+    let outcome = execute(log::MemorySystem::default().with_seed(seed), program);
     observations.log_runs += 1;
     observations.log.insert(outcome.clone());
     outcome
 }
 
-fn observe_graph(program: &Program, observations: &mut Observations) -> Vec<Observation> {
+fn observe_graph(
+    program: &Program,
+    observations: &mut Observations,
+    seed: u64,
+) -> Vec<Observation> {
     let outcome = execute(
-        graph::MemorySystem::with_seq_cst_mode(SeqCstMode::Cxx11),
+        graph::MemorySystem::with_seq_cst_mode(SeqCstMode::Cxx11).with_seed(seed),
         program,
     );
     observations.graph_runs += 1;
