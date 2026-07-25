@@ -53,6 +53,11 @@ pub enum SeqCstMode {
 }
 
 impl MemorySystem {
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.rng = ChaCha8Rng::seed_from_u64(seed);
+        self
+    }
+
     pub fn with_seq_cst_mode(seq_cst_mode: SeqCstMode) -> Self {
         Self {
             seq_cst_mode,
