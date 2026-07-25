@@ -118,3 +118,36 @@ pub fn create_default() -> Box<dyn MemoryBackend> {
 }
 
 pub type MemorySystem = log::MemorySystem;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn load_samples(mut memory: impl MemoryBackend) -> Vec<usize> {
+        let address = memory.malloc(1);
+        let writer = memory.add_thread();
+        memory.store(writer, address, 1, Ordering::Relaxed);
+        memory.store(writer, address, 2, Ordering::Relaxed);
+
+        (0..16)
+            .map(|_| {
+                let reader = memory.add_thread();
+                memory.load(reader, address, Ordering::Relaxed)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn seeded_backends_repeat_choices() {
+        assert_eq!(
+            load_samples(log::MemorySystem::default().with_seed(7)),
+            load_samples(log::MemorySystem::default().with_seed(7))
+        );
+
+        #[cfg(feature = "graph")]
+        assert_eq!(
+            load_samples(graph::MemorySystem::default().with_seed(7)),
+            load_samples(graph::MemorySystem::default().with_seed(7))
+        );
+    }
+}

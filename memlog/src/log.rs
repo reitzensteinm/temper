@@ -71,9 +71,15 @@ pub struct MemorySystem {
     pub log: Vec<MemoryOperation>,
     pub acc: Vec<MemoryOperation>,
     pub threads: Vec<ThreadView>,
+    rng: ChaCha8Rng,
 }
 
 impl MemorySystem {
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.rng = ChaCha8Rng::seed_from_u64(seed);
+        self
+    }
+
     fn op<F: Fn(usize) -> Option<usize>>(
         &mut self,
         thread: usize,
@@ -287,9 +293,6 @@ impl MemorySystem {
         assert!(
             level == Ordering::Relaxed || level == Ordering::Acquire || level == Ordering::SeqCst
         );
-        let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
-        let mut rng = ChaCha8Rng::seed_from_u64(s);
-
         let view = &mut self.threads[thread];
 
         let all_ops = std::iter::once(&self.acc[addr]).chain(self.log.iter());
@@ -336,7 +339,7 @@ impl MemorySystem {
 
         let possible = &possible[first_ind..];
 
-        let choice = possible[(rng.next_u32() as usize) % possible.len()];
+        let choice = possible[(self.rng.next_u32() as usize) % possible.len()];
 
         Self::read_synchronize(view, choice, level);
 
@@ -346,12 +349,15 @@ impl MemorySystem {
 
 impl Default for MemorySystem {
     fn default() -> Self {
-        MemorySystem {
+        let seed = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
+
+        Self {
             threads: vec![],
             acc: vec![],
             global_sequence: 10,
             seq_cst_sequence: Default::default(),
             log: vec![],
+            rng: ChaCha8Rng::seed_from_u64(seed),
         }
     }
 }
@@ -434,9 +440,6 @@ impl MemoryBackend for MemorySystem {
     }
 
     fn spurious_failure(&mut self) -> bool {
-        let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
-        let mut rng = ChaCha8Rng::seed_from_u64(s);
-
-        rng.gen_bool(0.5)
+        self.rng.gen_bool(0.5)
     }
 }
