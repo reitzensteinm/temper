@@ -46,6 +46,20 @@ enum Operation {
         new: usize,
         success: Ordering,
         failure: Ordering,
+        weak: bool,
+    },
+    FetchOp {
+        thread: usize,
+        address: usize,
+        increment: usize,
+        ordering: Ordering,
+    },
+    FetchUpdate {
+        thread: usize,
+        address: usize,
+        increment: Option<usize>,
+        set_order: Ordering,
+        fetch_order: Ordering,
     },
     Fence {
         thread: usize,
@@ -57,21 +71,25 @@ enum Operation {
 enum OperationKind {
     Load,
     Store,
-    CompareExchange(CompareExchangeExpectation),
+    CompareExchange {
+        expectation: CompareExchangeExpectation,
+        weak: bool,
+    },
+    FetchOp,
+    FetchUpdate,
     Fence,
 }
 
 #[derive(Clone, Copy, Debug)]
 enum CompareExchangeExpectation {
-    MustSucceed,
     MustFail,
     Either,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Observation {
-    Load(usize),
-    CompareExchange { previous: usize, success: bool },
+    Value(usize),
+    Result(Result<usize, usize>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -137,8 +155,8 @@ impl std::error::Error for Difference {}
 fn run(config: Config) -> Result<(), Difference> {
     assert!(config.cases > 0, "cases must be greater than zero");
     assert!(
-        config.max_operations >= 5,
-        "max_operations must be at least five"
+        config.max_operations >= 8,
+        "max_operations must be at least eight"
     );
     assert!(
         config.runs_per_case > 0,
@@ -286,7 +304,7 @@ fn execute<B: MemoryBackend>(mut memory: B, program: &Program) -> Vec<Observatio
                 thread,
                 address,
                 ordering,
-            } => outcome.push(Observation::Load(memory.load(
+            } => outcome.push(Observation::Value(memory.load(
                 threads[thread],
                 base + address,
                 ordering,
@@ -304,25 +322,56 @@ fn execute<B: MemoryBackend>(mut memory: B, program: &Program) -> Vec<Observatio
                 new,
                 success,
                 failure,
+                weak,
             } => {
-                let result = memory.compare_exchange(
+                let address = base + address;
+                let result = if weak {
+                    memory.compare_exchange_weak(
+                        threads[thread],
+                        address,
+                        current,
+                        new,
+                        success,
+                        failure,
+                    )
+                } else {
+                    memory.compare_exchange(
+                        threads[thread],
+                        address,
+                        current,
+                        new,
+                        success,
+                        failure,
+                    )
+                };
+                outcome.push(Observation::Result(result));
+            }
+            Operation::FetchOp {
+                thread,
+                address,
+                increment,
+                ordering,
+            } => outcome.push(Observation::Value(memory.fetch_op(
+                threads[thread],
+                base + address,
+                &|value| value.wrapping_add(increment),
+                ordering,
+            ))),
+            Operation::FetchUpdate {
+                thread,
+                address,
+                increment,
+                set_order,
+                fetch_order,
+            } => {
+                let result = memory.fetch_update(
                     threads[thread],
                     base + address,
-                    current,
-                    new,
-                    success,
-                    failure,
+                    &|value| increment.map(|increment| value.wrapping_add(increment)),
+                    set_order,
+                    fetch_order,
                 );
-                outcome.push(match result {
-                    Ok(previous) => Observation::CompareExchange {
-                        previous,
-                        success: true,
-                    },
-                    Err(previous) => Observation::CompareExchange {
-                        previous,
-                        success: false,
-                    },
-                });
+                outcome.push(Observation::Result(result));
             }
             Operation::Fence { thread, ordering } => memory.fence(threads[thread], ordering),
         }
@@ -333,7 +382,7 @@ fn execute<B: MemoryBackend>(mut memory: B, program: &Program) -> Vec<Observatio
 
 impl Program {
     fn generate(rng: &mut ChaCha8Rng, max_operations: usize, ordering_mode: OrderingMode) -> Self {
-        let operation_count = rng.gen_range(5..=max_operations);
+        let operation_count = rng.gen_range(8..=max_operations);
         let threads = 4.min(operation_count);
         let addresses = rng.gen_range(1..=3.min(operation_count));
         let mut initial_threads: Vec<_> = (0..threads).collect();
@@ -341,25 +390,66 @@ impl Program {
         let mut initial_addresses: Vec<_> = (0..addresses).collect();
         initial_addresses.shuffle(rng);
         let mut operation_kinds = vec![
-            OperationKind::CompareExchange(CompareExchangeExpectation::MustSucceed),
-            OperationKind::CompareExchange(CompareExchangeExpectation::MustFail),
+            OperationKind::CompareExchange {
+                expectation: CompareExchangeExpectation::MustFail,
+                weak: false,
+            },
             OperationKind::Load,
             OperationKind::Store,
             OperationKind::Fence,
+            OperationKind::FetchOp,
+            OperationKind::FetchUpdate,
         ];
-        while operation_kinds.len() < operation_count {
-            operation_kinds.push(match rng.gen_range(0..4) {
+        while operation_kinds.len() < operation_count - 2 {
+            operation_kinds.push(match rng.gen_range(0..7) {
                 0 => OperationKind::Load,
                 1 => OperationKind::Store,
-                2 => OperationKind::CompareExchange(CompareExchangeExpectation::Either),
-                _ => OperationKind::Fence,
+                2 => OperationKind::CompareExchange {
+                    expectation: CompareExchangeExpectation::Either,
+                    weak: false,
+                },
+                3 => OperationKind::CompareExchange {
+                    expectation: CompareExchangeExpectation::Either,
+                    weak: true,
+                },
+                4 => OperationKind::Fence,
+                5 => OperationKind::FetchOp,
+                _ => OperationKind::FetchUpdate,
             });
         }
-        operation_kinds[1..].shuffle(rng);
+        operation_kinds.shuffle(rng);
         let mut next_value = 1;
         let mut operations = Vec::with_capacity(operation_count);
 
-        for (index, operation_kind) in operation_kinds.into_iter().enumerate() {
+        let first_thread = initial_threads[0];
+        let first_address = initial_addresses[0];
+        let (success, failure) = ordering_mode.random_compare_exchange_orderings(rng);
+        operations.push(Operation::CompareExchange {
+            thread: first_thread,
+            address: first_address,
+            current: 0,
+            new: next_value,
+            success,
+            failure,
+            weak: false,
+        });
+        let current = next_value;
+        next_value += 1;
+
+        let (success, failure) = ordering_mode.random_compare_exchange_orderings(rng);
+        operations.push(Operation::CompareExchange {
+            thread: initial_threads[1],
+            address: first_address,
+            current,
+            new: next_value,
+            success,
+            failure,
+            weak: true,
+        });
+        next_value += 1;
+
+        for (offset, operation_kind) in operation_kinds.into_iter().enumerate() {
+            let index = offset + 2;
             let thread = initial_threads
                 .get(index)
                 .copied()
@@ -385,22 +475,39 @@ impl Program {
                     next_value += 1;
                     operation
                 }
-                OperationKind::CompareExchange(expectation) => {
+                OperationKind::CompareExchange { expectation, weak } => {
                     let (success, failure) = ordering_mode.random_compare_exchange_orderings(rng);
                     let operation = Operation::CompareExchange {
                         thread,
                         address,
                         current: match expectation {
-                            CompareExchangeExpectation::MustSucceed => 0,
-                            CompareExchangeExpectation::MustFail => operation_count + 1,
+                            CompareExchangeExpectation::MustFail => usize::MAX,
                             CompareExchangeExpectation::Either => rng.gen_range(0..next_value),
                         },
                         new: next_value,
                         success,
                         failure,
+                        weak,
                     };
                     next_value += 1;
                     operation
+                }
+                OperationKind::FetchOp => Operation::FetchOp {
+                    thread,
+                    address,
+                    increment: rng.gen_range(1..=3),
+                    ordering: ordering_mode.random_rmw_ordering(rng),
+                },
+                OperationKind::FetchUpdate => {
+                    let (set_order, fetch_order) =
+                        ordering_mode.random_compare_exchange_orderings(rng);
+                    Operation::FetchUpdate {
+                        thread,
+                        address,
+                        increment: rng.gen_bool(0.5).then(|| rng.gen_range(1..=3)),
+                        set_order,
+                        fetch_order,
+                    }
                 }
                 OperationKind::Fence => Operation::Fence {
                     thread,
@@ -445,6 +552,15 @@ impl OrderingMode {
         orderings[rng.gen_range(0..orderings.len())]
     }
 
+    fn random_rmw_ordering(self, rng: &mut ChaCha8Rng) -> Ordering {
+        let orderings: &[Ordering] = match self {
+            Self::All => &RMW_ORDERINGS,
+            Self::OnlySeqCst => &SEQ_CST_ORDERING,
+            Self::WithoutSeqCst => &RMW_ORDERINGS_WITHOUT_SEQ_CST,
+        };
+        orderings[rng.gen_range(0..orderings.len())]
+    }
+
     fn random_fence_ordering(self, rng: &mut ChaCha8Rng) -> Ordering {
         let orderings: &[Ordering] = match self {
             Self::All => &FENCE_ORDERINGS,
@@ -460,6 +576,19 @@ const STORE_ORDERINGS: [Ordering; 3] = [Ordering::Relaxed, Ordering::Release, Or
 const SEQ_CST_ORDERING: [Ordering; 1] = [Ordering::SeqCst];
 const LOAD_ORDERINGS_WITHOUT_SEQ_CST: [Ordering; 2] = [Ordering::Relaxed, Ordering::Acquire];
 const STORE_ORDERINGS_WITHOUT_SEQ_CST: [Ordering; 2] = [Ordering::Relaxed, Ordering::Release];
+const RMW_ORDERINGS: [Ordering; 5] = [
+    Ordering::Relaxed,
+    Ordering::Acquire,
+    Ordering::Release,
+    Ordering::AcqRel,
+    Ordering::SeqCst,
+];
+const RMW_ORDERINGS_WITHOUT_SEQ_CST: [Ordering; 4] = [
+    Ordering::Relaxed,
+    Ordering::Acquire,
+    Ordering::Release,
+    Ordering::AcqRel,
+];
 const FENCE_ORDERINGS: [Ordering; 4] = [
     Ordering::Acquire,
     Ordering::Release,
@@ -520,12 +649,46 @@ impl fmt::Display for Program {
                     new,
                     success,
                     failure,
+                    weak,
+                } => {
+                    let name = if *weak {
+                        "compare_exchange_weak"
+                    } else {
+                        "compare_exchange"
+                    };
+                    write!(
+                        text,
+                        "{name} t{thread} a{address} {current} -> {new} \
+                         success={success:?} failure={failure:?}"
+                    )
+                    .unwrap()
+                }
+                Operation::FetchOp {
+                    thread,
+                    address,
+                    increment,
+                    ordering,
                 } => write!(
                     text,
-                    "compare_exchange t{thread} a{address} {current} -> {new} \
-                     success={success:?} failure={failure:?}"
+                    "fetch_op t{thread} a{address} += {increment} {ordering:?}"
                 )
                 .unwrap(),
+                Operation::FetchUpdate {
+                    thread,
+                    address,
+                    increment,
+                    set_order,
+                    fetch_order,
+                } => {
+                    let update = increment
+                        .map_or_else(|| "reject".to_owned(), |increment| format!("+={increment}"));
+                    write!(
+                        text,
+                        "fetch_update t{thread} a{address} {update} \
+                         set={set_order:?} fetch={fetch_order:?}"
+                    )
+                    .unwrap()
+                }
                 Operation::Fence { thread, ordering } => {
                     write!(text, "fence t{thread} {ordering:?}").unwrap()
                 }
