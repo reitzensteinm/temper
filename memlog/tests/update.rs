@@ -321,5 +321,42 @@ fn test_fetch_modify_failure_seq_cst_ordering() {
     }
 }
 
-// Todo: Test fetch ordering in fetch_update in the case of success
-// Currently, the test harness is not capable of reentrant access to memlog, which means this cannot be tested.
+#[test]
+fn test_successful_fetch_update_fetch_ordering() {
+    fn inner(fetch_order: Ordering) -> Vec<usize> {
+        let mut lt = LogTest::default();
+
+        lt.add(move |mut eg: Environment| {
+            eg.a.store(1, Ordering::Relaxed);
+            eg.b.store(1, Ordering::Release);
+            0
+        });
+
+        lt.add(move |mut eg: Environment| {
+            let mut observed = 0;
+            let a = &mut eg.a;
+            let b = &mut eg.b;
+
+            let updated = b.fetch_update(
+                |value| {
+                    observed = a.load(Ordering::Relaxed);
+                    Some(value + 1)
+                },
+                Ordering::Relaxed,
+                fetch_order,
+            );
+            assert_eq!(updated, Ok(1));
+
+            observed
+        });
+
+        lt.run_sequential()
+    }
+
+    assert!(run_until(
+        || inner(Ordering::Relaxed),
+        vec![vec![0, 0], vec![0, 1]]
+    ));
+    assert!(run_until(|| inner(Ordering::Acquire), vec![vec![0, 1]]));
+    assert!(run_until(|| inner(Ordering::SeqCst), vec![vec![0, 1]]));
+}

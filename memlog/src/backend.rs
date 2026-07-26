@@ -50,30 +50,6 @@ pub trait MemoryBackend: Send {
             self.compare_exchange(thread, addr, current, new, success, failure)
         }
     }
-
-    fn fetch_update(
-        &mut self,
-        thread: usize,
-        addr: usize,
-        f: &dyn Fn(usize) -> Option<usize>,
-        set_order: Ordering,
-        fetch_order: Ordering,
-    ) -> Result<usize, usize> {
-        loop {
-            let current = self.load(thread, addr, fetch_order);
-            match f(current) {
-                None => return Err(current),
-                Some(new) => {
-                    if self
-                        .compare_exchange_weak(thread, addr, current, new, set_order, fetch_order)
-                        .is_ok()
-                    {
-                        return Ok(current);
-                    }
-                }
-            }
-        }
-    }
 }
 
 pub fn rmw_orderings(success: Ordering) -> (Ordering, Ordering) {

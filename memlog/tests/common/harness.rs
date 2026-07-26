@@ -45,15 +45,24 @@ impl Value {
     }
 
     #[allow(unused)]
-    pub fn fetch_update<F: Fn(usize) -> Option<usize>>(
+    pub fn fetch_update<F: FnMut(usize) -> Option<usize>>(
         &mut self,
-        f: F,
+        mut f: F,
         set_order: Ordering,
         fetch_order: Ordering,
     ) -> Result<usize, usize> {
-        self.wait();
-        let mut mem = self.memory.lock().unwrap();
-        mem.fetch_update(self.thread, self.addr, &f, set_order, fetch_order)
+        let mut current = self.load(fetch_order);
+
+        loop {
+            let Some(new) = f(current) else {
+                return Err(current);
+            };
+
+            match self.exchange_weak(current, new, set_order, fetch_order) {
+                Ok(previous) => return Ok(previous),
+                Err(actual) => current = actual,
+            }
+        }
     }
 
     #[allow(unused)]
