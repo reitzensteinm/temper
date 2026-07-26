@@ -54,13 +54,6 @@ enum Operation {
         increment: usize,
         ordering: Ordering,
     },
-    FetchUpdate {
-        thread: usize,
-        address: usize,
-        increment: Option<usize>,
-        set_order: Ordering,
-        fetch_order: Ordering,
-    },
     Fence {
         thread: usize,
         ordering: Ordering,
@@ -76,7 +69,6 @@ enum OperationKind {
         weak: bool,
     },
     FetchOp,
-    FetchUpdate,
     Fence,
 }
 
@@ -155,8 +147,8 @@ impl std::error::Error for Difference {}
 fn run(config: Config) -> Result<(), Difference> {
     assert!(config.cases > 0, "cases must be greater than zero");
     assert!(
-        config.max_operations >= 8,
-        "max_operations must be at least eight"
+        config.max_operations >= 7,
+        "max_operations must be at least seven"
     );
     assert!(
         config.runs_per_case > 0,
@@ -357,22 +349,6 @@ fn execute<B: MemoryBackend>(mut memory: B, program: &Program) -> Vec<Observatio
                 &|value| value.wrapping_add(increment),
                 ordering,
             ))),
-            Operation::FetchUpdate {
-                thread,
-                address,
-                increment,
-                set_order,
-                fetch_order,
-            } => {
-                let result = memory.fetch_update(
-                    threads[thread],
-                    base + address,
-                    &|value| increment.map(|increment| value.wrapping_add(increment)),
-                    set_order,
-                    fetch_order,
-                );
-                outcome.push(Observation::Result(result));
-            }
             Operation::Fence { thread, ordering } => memory.fence(threads[thread], ordering),
         }
     }
@@ -382,7 +358,7 @@ fn execute<B: MemoryBackend>(mut memory: B, program: &Program) -> Vec<Observatio
 
 impl Program {
     fn generate(rng: &mut ChaCha8Rng, max_operations: usize, ordering_mode: OrderingMode) -> Self {
-        let operation_count = rng.gen_range(8..=max_operations);
+        let operation_count = rng.gen_range(7..=max_operations);
         let threads = 4.min(operation_count);
         let addresses = rng.gen_range(1..=3.min(operation_count));
         let mut initial_threads: Vec<_> = (0..threads).collect();
@@ -398,10 +374,9 @@ impl Program {
             OperationKind::Store,
             OperationKind::Fence,
             OperationKind::FetchOp,
-            OperationKind::FetchUpdate,
         ];
         while operation_kinds.len() < operation_count - 2 {
-            operation_kinds.push(match rng.gen_range(0..7) {
+            operation_kinds.push(match rng.gen_range(0..6) {
                 0 => OperationKind::Load,
                 1 => OperationKind::Store,
                 2 => OperationKind::CompareExchange {
@@ -413,8 +388,7 @@ impl Program {
                     weak: true,
                 },
                 4 => OperationKind::Fence,
-                5 => OperationKind::FetchOp,
-                _ => OperationKind::FetchUpdate,
+                _ => OperationKind::FetchOp,
             });
         }
         operation_kinds.shuffle(rng);
@@ -498,17 +472,6 @@ impl Program {
                     increment: rng.gen_range(1..=3),
                     ordering: ordering_mode.random_rmw_ordering(rng),
                 },
-                OperationKind::FetchUpdate => {
-                    let (set_order, fetch_order) =
-                        ordering_mode.random_compare_exchange_orderings(rng);
-                    Operation::FetchUpdate {
-                        thread,
-                        address,
-                        increment: rng.gen_bool(0.5).then(|| rng.gen_range(1..=3)),
-                        set_order,
-                        fetch_order,
-                    }
-                }
                 OperationKind::Fence => Operation::Fence {
                     thread,
                     ordering: ordering_mode.random_fence_ordering(rng),
@@ -673,22 +636,6 @@ impl fmt::Display for Program {
                     "fetch_op t{thread} a{address} += {increment} {ordering:?}"
                 )
                 .unwrap(),
-                Operation::FetchUpdate {
-                    thread,
-                    address,
-                    increment,
-                    set_order,
-                    fetch_order,
-                } => {
-                    let update = increment
-                        .map_or_else(|| "reject".to_owned(), |increment| format!("+={increment}"));
-                    write!(
-                        text,
-                        "fetch_update t{thread} a{address} {update} \
-                         set={set_order:?} fetch={fetch_order:?}"
-                    )
-                    .unwrap()
-                }
                 Operation::Fence { thread, ordering } => {
                     write!(text, "fence t{thread} {ordering:?}").unwrap()
                 }

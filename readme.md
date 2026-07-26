@@ -50,7 +50,6 @@ Todo:
 * MESI protocol simulation
 * Locks
 * Seeded randomness
-* Reentry support for fetch_update
 * Support multiple datatypes
 
 ### Low Level
