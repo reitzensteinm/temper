@@ -1,4 +1,8 @@
 use memlog::backend::{create_default, MemoryBackend};
+#[cfg(feature = "graph")]
+use memlog::graph;
+#[cfg(not(feature = "graph"))]
+use memlog::log;
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::atomic::Ordering;
@@ -10,6 +14,15 @@ type SharedMemory = Arc<Mutex<Box<dyn MemoryBackend>>>;
 
 fn create_test_memory() -> SharedMemory {
     Arc::new(Mutex::new(create_default()))
+}
+
+fn create_seeded_test_memory(seed: u64) -> SharedMemory {
+    #[cfg(feature = "graph")]
+    let memory = graph::MemorySystem::default().with_seed(seed);
+    #[cfg(not(feature = "graph"))]
+    let memory = log::MemorySystem::default().with_seed(seed);
+
+    Arc::new(Mutex::new(Box::new(memory)))
 }
 
 pub struct ThreadState {
@@ -99,6 +112,13 @@ impl Value {
         self.wait();
         let mut mem = self.memory.lock().unwrap();
         mem.fetch_op(self.thread, self.addr, &f, ordering)
+    }
+
+    #[allow(unused)]
+    pub fn swap(&mut self, new: usize, ordering: Ordering) -> usize {
+        self.wait();
+        let mut mem = self.memory.lock().unwrap();
+        mem.swap(self.thread, self.addr, new, ordering)
     }
 
     pub fn load(&mut self, ordering: Ordering) -> usize {
@@ -194,9 +214,13 @@ impl<T: Copy + Send + 'static> LogTest<T> {
         }
     }
 
-    pub fn drive(mut threads: Vec<Thread<T>>) -> Vec<T> {
+    pub fn drive(threads: Vec<Thread<T>>) -> Vec<T> {
         let s = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos() as u64;
-        let mut rng = ChaCha8Rng::seed_from_u64(s);
+        Self::drive_with_seed(threads, s)
+    }
+
+    fn drive_with_seed(mut threads: Vec<Thread<T>>, seed: u64) -> Vec<T> {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
         loop {
             let mut all_finished = true;
@@ -249,6 +273,21 @@ impl<T: Copy + Send + 'static> LogTest<T> {
         }
 
         Self::drive(threads)
+    }
+
+    #[allow(unused)]
+    pub fn run_with_seed(&mut self, scheduler_seed: u64, memory_seed: u64) -> Vec<T> {
+        let ms = create_seeded_test_memory(memory_seed);
+        ms.lock().unwrap().malloc(5);
+
+        let threads = self
+            .fns
+            .drain(..)
+            .enumerate()
+            .map(|(i, f)| Self::spawn_thread(ms.clone(), i, f))
+            .collect();
+
+        Self::drive_with_seed(threads, scheduler_seed)
     }
 
     // Runs Thread A fully, then Thread B, etc
