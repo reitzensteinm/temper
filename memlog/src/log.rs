@@ -176,6 +176,10 @@ impl MemorySystem {
             .unwrap()
     }
 
+    pub fn swap(&mut self, thread: usize, addr: usize, new: usize, level: Ordering) -> usize {
+        self.fetch_op(thread, addr, |_| new, level)
+    }
+
     pub fn compare_exchange(
         &mut self,
         thread: usize,
