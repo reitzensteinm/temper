@@ -20,6 +20,10 @@ pub trait MemoryBackend: Send {
         level: Ordering,
     ) -> usize;
 
+    fn swap(&mut self, thread: usize, addr: usize, new: usize, level: Ordering) -> usize {
+        self.fetch_op(thread, addr, &|_| new, level)
+    }
+
     fn compare_exchange(
         &mut self,
         thread: usize,
@@ -98,6 +102,32 @@ pub type MemorySystem = log::MemorySystem;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn swap_replaces_value_for_all_rmw_orderings() {
+        let orderings = [
+            Ordering::Relaxed,
+            Ordering::Acquire,
+            Ordering::Release,
+            Ordering::AcqRel,
+            Ordering::SeqCst,
+        ];
+
+        for mut memory in create_all() {
+            let address = memory.malloc(1);
+            let thread = memory.add_thread();
+            memory.store(thread, address, 1, Ordering::SeqCst);
+
+            for (index, ordering) in orderings.into_iter().enumerate() {
+                assert_eq!(
+                    memory.swap(thread, address, index + 2, ordering),
+                    index + 1,
+                    "{} backend with {ordering:?}",
+                    memory.name()
+                );
+            }
+        }
+    }
 
     fn load_samples(mut memory: impl MemoryBackend) -> Vec<usize> {
         let address = memory.malloc(1);
