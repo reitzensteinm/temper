@@ -11,6 +11,8 @@ use std::thread;
 use std::thread::JoinHandle;
 
 type SharedMemory = Arc<Mutex<Box<dyn MemoryBackend>>>;
+const HEAP_SIZE: usize = 64;
+const NAMED_VALUES: usize = 5;
 
 fn create_test_memory() -> SharedMemory {
     Arc::new(Mutex::new(create_default()))
@@ -142,6 +144,7 @@ pub struct Environment {
     pub c: Value,
     pub d: Value,
     pub e: Value,
+    pub heap: Vec<Value>,
 }
 
 impl Environment {
@@ -202,6 +205,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
             c: build_value(),
             d: build_value(),
             e: build_value(),
+            heap: (0..HEAP_SIZE).map(|_| build_value()).collect(),
         };
 
         Thread {
@@ -264,7 +268,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     #[allow(unused)]
     pub fn run(&mut self) -> Vec<T> {
         let ms = create_test_memory();
-        ms.lock().unwrap().malloc(5);
+        ms.lock().unwrap().malloc(NAMED_VALUES + HEAP_SIZE);
 
         let mut threads = vec![];
 
@@ -278,7 +282,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     #[allow(unused)]
     pub fn run_with_seed(&mut self, scheduler_seed: u64, memory_seed: u64) -> Vec<T> {
         let ms = create_seeded_test_memory(memory_seed);
-        ms.lock().unwrap().malloc(5);
+        ms.lock().unwrap().malloc(NAMED_VALUES + HEAP_SIZE);
 
         let threads = self
             .fns
@@ -294,7 +298,7 @@ impl<T: Copy + Send + 'static> LogTest<T> {
     #[allow(unused)]
     pub fn run_sequential(&mut self) -> Vec<T> {
         let ms = create_test_memory();
-        ms.lock().unwrap().malloc(5);
+        ms.lock().unwrap().malloc(NAMED_VALUES + HEAP_SIZE);
 
         let mut results = vec![];
 
