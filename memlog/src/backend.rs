@@ -104,6 +104,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn allocations_have_disjoint_addresses() {
+        for mut memory in create_all() {
+            let first = memory.malloc(1);
+            let second = memory.malloc(1);
+            let thread = memory.add_thread();
+
+            memory.store(thread, first, 1, Ordering::SeqCst);
+            assert_eq!(memory.load(thread, first, Ordering::SeqCst), 1);
+            assert_eq!(memory.load(thread, second, Ordering::SeqCst), 0);
+        }
+    }
+
+    #[test]
     fn swap_replaces_value_for_all_rmw_orderings() {
         let orderings = [
             Ordering::Relaxed,
