@@ -385,7 +385,7 @@ impl MemorySystem {
                 global_sequence: 0,
                 level: Ordering::Relaxed,
                 release_chain: false,
-                address: i,
+                address: base + i,
                 value: 0,
                 source_sequence: Default::default(),
                 source_fence_sequence: Default::default(),
